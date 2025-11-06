@@ -15,7 +15,7 @@ const options = {
     },
     servers: [
       {
-        url: 'http://localhost:3000',
+        url: 'https://balcao-de-negocios.vercel.app',
         description: 'Servidor de Desenvolvimento'
       },
       {
