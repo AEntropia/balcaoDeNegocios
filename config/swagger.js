@@ -15,7 +15,7 @@ const options = {
     },
     servers: [
       {
-        url: 'https://balcao-de-negocios-6pjw4l8l4-aentropias-projects.vercel.app',
+        url: 'http://localhost:3000',
         description: 'Servidor de Desenvolvimento'
       },
       {
