@@ -8,35 +8,20 @@ const cookieParser = require('cookie-parser');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// CORS - Permissivo para testes
+const corsOptions = {
+  origin: '*',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+};
+
+app.use(cors(corsOptions));
+
 // Middlewares
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? process.env.FRONTEND_URL 
-    : 'http://localhost:3000',
-  credentials: true
-}));
-
-// Swagger UI com CSS e JS via CDN
-const swaggerOptions = {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'API Docs',
-  swaggerOptions: {
-    persistAuthorization: true
-  },
-  // Usar CDN para os assets
-  customCssUrl: 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css',
-  customJs: [
-    'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js',
-    'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js'
-  ]
-};
-
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, swaggerOptions));
 
 // Log de requisições em desenvolvimento
 if (process.env.NODE_ENV !== 'production') {
@@ -45,6 +30,28 @@ if (process.env.NODE_ENV !== 'production') {
     next();
   });
 }
+
+// Swagger UI - Configuração especial para Vercel
+const swaggerOptions = {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'API de Gestão Empresarial',
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true,
+    docExpansion: 'none',
+    filter: true,
+    tryItOutEnabled: true
+  }
+};
+
+app.use('/api-docs', swaggerUi.serve);
+app.get('/api-docs', swaggerUi.setup(swaggerSpecs, swaggerOptions));
+
+// Endpoint alternativo para o JSON do Swagger
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json(swaggerSpecs);
+});
 
 // Importar rotas
 const contatosRoutes = require('./routes/contatos');
@@ -56,13 +63,17 @@ app.use('/api/contatos', contatosRoutes);
 app.use('/api/empresas', empresasRoutes);
 app.use('/api/auth', authRoutes);
 
-// Rota raiz - Documentação básica da API
+// Rota raiz
 app.get('/', (req, res) => {
   res.json({
     mensagem: 'API funcionando! 🚀',
     versao: '1.0.0',
     documentacao: '/api-docs',
     endpoints: {
+      swagger: {
+        ui: '/api-docs',
+        json: '/api-docs.json'
+      },
       contatos: {
         descricao: 'Gerenciamento de contatos',
         rotas: {
@@ -101,7 +112,8 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
@@ -127,25 +139,31 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Iniciar servidor
-app.listen(PORT, () => {
-  console.log('═══════════════════════════════════════');
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`📍 URL: http://localhost:${PORT}`);
-  console.log(`🔗 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📚 Documentação: http://localhost:${PORT}/api-docs`);
-  console.log('═══════════════════════════════════════');
-});
+// Iniciar servidor apenas se não for Vercel
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log('═══════════════════════════════════════');
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`📍 URL: http://localhost:${PORT}`);
+    console.log(`🔗 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📚 Documentação: http://localhost:${PORT}/api-docs`);
+    console.log('═══════════════════════════════════════');
+  });
+}
 
 // Tratamento de erros não capturados
 process.on('unhandledRejection', (err) => {
   console.error('Erro não tratado:', err);
-  process.exit(1);
+  if (process.env.NODE_ENV !== 'production') {
+    process.exit(1);
+  }
 });
 
 process.on('uncaughtException', (err) => {
   console.error('Exceção não capturada:', err);
-  process.exit(1);
+  if (process.env.NODE_ENV !== 'production') {
+    process.exit(1);
+  }
 });
 
 module.exports = app;
