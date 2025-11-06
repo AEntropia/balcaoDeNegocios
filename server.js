@@ -13,21 +13,30 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(express.json());
 
 app.use(cors({
-  origin: 'http://localhost:3000', // URL do seu frontend
-  credentials: true // IMPORTANTE: permite envio de cookies
+  origin: process.env.NODE_ENV === 'production' 
+    ? process.env.FRONTEND_URL 
+    : 'http://localhost:3000',
+  credentials: true
 }));
 
-// Swagger UI
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {
-  customSiteTitle: 'API Docs',
+// Swagger UI com CSS e JS via CDN
+const swaggerOptions = {
   customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'API Docs',
   swaggerOptions: {
     persistAuthorization: true
-  }
-}));
+  },
+  // Usar CDN para os assets
+  customCssUrl: 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css',
+  customJs: [
+    'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js',
+    'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js'
+  ]
+};
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, swaggerOptions));
 
 // Log de requisições em desenvolvimento
 if (process.env.NODE_ENV !== 'production') {
@@ -52,10 +61,11 @@ app.get('/', (req, res) => {
   res.json({
     mensagem: 'API funcionando! 🚀',
     versao: '1.0.0',
-    documentacao: {
+    documentacao: '/api-docs',
+    endpoints: {
       contatos: {
         descricao: 'Gerenciamento de contatos',
-        endpoints: {
+        rotas: {
           'POST /api/contatos': 'Enviar novo contato (público)',
           'GET /api/contatos': 'Listar contatos (protegido)',
           'PATCH /api/contatos/:id/lido': 'Marcar contato como lido (protegido)'
@@ -63,7 +73,7 @@ app.get('/', (req, res) => {
       },
       empresas: {
         descricao: 'CRUD de empresas',
-        endpoints: {
+        rotas: {
           'POST /api/empresas': 'Criar empresa (protegido)',
           'GET /api/empresas': 'Listar empresas (protegido)',
           'GET /api/empresas/:id': 'Buscar empresa (protegido)',
@@ -73,7 +83,7 @@ app.get('/', (req, res) => {
       },
       auth: {
         descricao: 'Autenticação e autorização',
-        endpoints: {
+        rotas: {
           'POST /api/auth/registro': 'Registrar novo usuário',
           'POST /api/auth/login': 'Fazer login',
           'GET /api/auth/perfil': 'Ver perfil (protegido)',
@@ -137,3 +147,5 @@ process.on('uncaughtException', (err) => {
   console.error('Exceção não capturada:', err);
   process.exit(1);
 });
+
+module.exports = app;
