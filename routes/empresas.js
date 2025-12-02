@@ -1,7 +1,68 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
+const supabase = require('../config/supabase');
 const autenticar = require('../middleware/auth');
+const multer = require('multer');
+
+// Configurar multer para memória
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Apenas imagens são permitidas!'), false);
+    }
+  }
+});
+
+// Função auxiliar para upload no Supabase
+const uploadImagemSupabase = async (file) => {
+  try {
+    const fileExt = file.originalname.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const filePath = `empresas/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from('empresas-imagens')
+      .upload(filePath, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false
+      });
+
+    if (error) throw error;
+
+    const { data: publicURL } = supabase.storage
+      .from('empresas-imagens')
+      .getPublicUrl(filePath);
+
+    return publicURL.publicUrl;
+  } catch (erro) {
+    console.error('Erro no upload:', erro);
+    throw erro;
+  }
+};
+
+// Função auxiliar para deletar imagem do Supabase
+const deletarImagemSupabase = async (imagemUrl) => {
+  try {
+    if (!imagemUrl) return;
+    
+    const urlParts = imagemUrl.split('/');
+    const bucketIndex = urlParts.indexOf('empresas-imagens');
+    if (bucketIndex === -1) return;
+    
+    const filePath = urlParts.slice(bucketIndex + 1).join('/');
+    
+    await supabase.storage
+      .from('empresas-imagens')
+      .remove([filePath]);
+  } catch (erro) {
+    console.error('Erro ao deletar imagem:', erro);
+  }
+};
 
 // Validação de CNPJ
 const validarCNPJ = (cnpj) => {
@@ -106,7 +167,12 @@ const validarCNPJ = (cnpj) => {
  * @swagger
  * /api/empresas:
  *   post:
- *     summary: Criar nova empresa
+ *     summary: Criar nova empresa (use Postman/Insomnia para enviar com imagem)
+ *     description: |
+ *       ⚠️ **UPLOAD DE IMAGENS**: Esta rota aceita multipart/form-data para upload de imagens.
+ *       Para testar com imagem, use Postman, Insomnia ou Thunder Client.
+ *       
+ *       No Swagger você pode criar empresas sem imagem usando JSON.
  *     tags: [Empresas]
  *     security:
  *       - bearerAuth: []
@@ -177,9 +243,6 @@ const validarCNPJ = (cnpj) => {
  *               dif:
  *                 type: string
  *                 example: Carteira de clientes consolidada
- *               img:
- *                 type: string
- *                 example: https://exemplo.com/imagem.jpg
  *     responses:
  *       201:
  *         description: Empresa criada com sucesso
@@ -194,6 +257,8 @@ const validarCNPJ = (cnpj) => {
  *                   type: string
  *                 id:
  *                   type: integer
+ *                 imagem_url:
+ *                   type: string
  *       400:
  *         description: Erro de validação
  *       409:
@@ -203,13 +268,13 @@ const validarCNPJ = (cnpj) => {
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/', autenticar, async (req, res) => {
+router.post('/', autenticar, upload.single('imagem'), async (req, res) => {
   try {
     const { 
       nome, setor, cnpj, razao_social, email, telefone, 
       localizacao, info, lucro, valor, faturamento, tipo,
       ano_fundacao, assinatura, funcionarios, 
-      tipo_imovel, dif, img
+      tipo_imovel, dif
     } = req.body;
 
     // Validações
@@ -242,6 +307,20 @@ router.post('/', autenticar, async (req, res) => {
       });
     }
 
+    // Upload da imagem (se enviada)
+    let imagemUrl = null;
+    if (req.file) {
+      try {
+        imagemUrl = await uploadImagemSupabase(req.file);
+      } catch (erroUpload) {
+        return res.status(500).json({
+          sucesso: false,
+          mensagem: 'Erro ao fazer upload da imagem',
+          erro: erroUpload.message
+        });
+      }
+    }
+
     // Inserir empresa
     const query = `
       INSERT INTO empresas (
@@ -272,14 +351,15 @@ router.post('/', autenticar, async (req, res) => {
       funcionarios || null,
       tipo_imovel || null,
       dif || null,
-      img || null,
+      imagemUrl,
       true
     ]);
 
     res.status(201).json({
       sucesso: true,
       mensagem: 'Empresa criada com sucesso',
-      id: resultado.rows[0].id
+      id: resultado.rows[0].id,
+      imagem_url: imagemUrl
     });
 
   } catch (erro) {
@@ -412,7 +492,12 @@ router.get('/:id', autenticar, async (req, res) => {
  * @swagger
  * /api/empresas/{id}:
  *   put:
- *     summary: Atualizar empresa
+ *     summary: Atualizar empresa (use Postman/Insomnia para enviar com imagem)
+ *     description: |
+ *       ⚠️ **UPLOAD DE IMAGENS**: Esta rota aceita multipart/form-data para upload de imagens.
+ *       Para testar com imagem, use Postman, Insomnia ou Thunder Client.
+ *       
+ *       No Swagger você pode atualizar empresas sem modificar a imagem usando JSON.
  *     tags: [Empresas]
  *     security:
  *       - bearerAuth: []
@@ -466,8 +551,6 @@ router.get('/:id', autenticar, async (req, res) => {
  *                 type: string
  *               dif:
  *                 type: string
- *               img:
- *                 type: string
  *               ativo:
  *                 type: boolean
  *     responses:
@@ -482,6 +565,8 @@ router.get('/:id', autenticar, async (req, res) => {
  *                   type: boolean
  *                 mensagem:
  *                   type: string
+ *                 imagem_url:
+ *                   type: string
  *       404:
  *         description: Empresa não encontrada
  *       401:
@@ -489,19 +574,19 @@ router.get('/:id', autenticar, async (req, res) => {
  *       500:
  *         description: Erro interno do servidor
  */
-router.put('/:id', autenticar, async (req, res) => {
+router.put('/:id', autenticar, upload.single('imagem'), async (req, res) => {
   try {
     const { id } = req.params;
     const { 
       nome, setor, razao_social, email, telefone, 
       localizacao, info, lucro, valor, faturamento, tipo,
       ano_fundacao, assinatura, funcionarios, 
-      tipo_imovel, dif, img, ativo 
+      tipo_imovel, dif, ativo 
     } = req.body;
 
-    // Verificar se empresa existe
+    // Verificar se empresa existe e pegar imagem antiga
     const empresaExistente = await pool.query(
-      'SELECT id FROM empresas WHERE id = $1',
+      'SELECT img FROM empresas WHERE id = $1',
       [id]
     );
 
@@ -510,6 +595,27 @@ router.put('/:id', autenticar, async (req, res) => {
         sucesso: false,
         mensagem: 'Empresa não encontrada'
       });
+    }
+
+    let imagemUrl = empresaExistente.rows[0].img;
+
+    // Se enviou nova imagem, fazer upload e deletar a antiga
+    if (req.file) {
+      try {
+        // Deletar imagem antiga
+        if (imagemUrl) {
+          await deletarImagemSupabase(imagemUrl);
+        }
+        
+        // Upload da nova imagem
+        imagemUrl = await uploadImagemSupabase(req.file);
+      } catch (erroUpload) {
+        return res.status(500).json({
+          sucesso: false,
+          mensagem: 'Erro ao processar imagem',
+          erro: erroUpload.message
+        });
+      }
     }
 
     const query = `
@@ -539,14 +645,15 @@ router.put('/:id', autenticar, async (req, res) => {
       funcionarios,
       tipo_imovel,
       dif,
-      img,
+      imagemUrl,
       ativo !== undefined ? ativo : true,
       id
     ]);
 
     res.json({
       sucesso: true,
-      mensagem: 'Empresa atualizada com sucesso'
+      mensagem: 'Empresa atualizada com sucesso',
+      imagem_url: imagemUrl
     });
 
   } catch (erro) {
@@ -562,7 +669,7 @@ router.put('/:id', autenticar, async (req, res) => {
  * @swagger
  * /api/empresas/{id}:
  *   delete:
- *     summary: Deletar empresa
+ *     summary: Deletar empresa e sua imagem
  *     tags: [Empresas]
  *     security:
  *       - bearerAuth: []
@@ -596,17 +703,26 @@ router.delete('/:id', autenticar, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const resultado = await pool.query(
-      'DELETE FROM empresas WHERE id = $1',
+    // Buscar imagem antes de deletar
+    const empresa = await pool.query(
+      'SELECT img FROM empresas WHERE id = $1',
       [id]
     );
 
-    if (resultado.rowCount === 0) {
+    if (empresa.rows.length === 0) {
       return res.status(404).json({
         sucesso: false,
         mensagem: 'Empresa não encontrada'
       });
     }
+
+    // Deletar imagem do Supabase Storage
+    if (empresa.rows[0].img) {
+      await deletarImagemSupabase(empresa.rows[0].img);
+    }
+
+    // Deletar empresa do banco
+    await pool.query('DELETE FROM empresas WHERE id = $1', [id]);
 
     res.json({
       sucesso: true,
