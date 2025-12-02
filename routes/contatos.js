@@ -60,7 +60,7 @@ const validarTelefone = (telefone) => {
 
 /**
  * @swagger
- * /api/contato:
+ * /api/contatos:
  *   post:
  *     summary: Criar novo contato (público)
  *     tags: [Contatos]
@@ -184,7 +184,7 @@ router.post('/', async (req, res) => {
 
 /**
  * @swagger
- * /api/contato:
+ * /api/contatos:
  *   get:
  *     summary: Lista todos os contatos
  *     tags: [Contatos]
@@ -264,7 +264,7 @@ router.get('/', autenticar, async (req, res) => {
 
 /**
  * @swagger
- * /api/contato/{id}:
+ * /api/contatos/{id}:
  *   get:
  *     summary: Buscar contato por ID
  *     tags: [Contatos]
@@ -326,7 +326,7 @@ router.get('/:id', autenticar, async (req, res) => {
 
 /**
  * @swagger
- * /api/contato/{id}:
+ * /api/contatos/{id}:
  *   put:
  *     summary: Atualizar contato
  *     tags: [Contatos]
@@ -432,7 +432,7 @@ router.put('/:id', autenticar, async (req, res) => {
 
 /**
  * @swagger
- * /api/contato/{id}:
+ * /api/contatos/{id}:
  *   delete:
  *     summary: Deletar contato
  *     tags: [Contatos]

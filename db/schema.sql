@@ -2,100 +2,71 @@
 -- Schema do Banco de Dados
 -- ============================================
 
--- Criar banco de dados
-CREATE DATABASE IF NOT EXISTS minha_api_db 
-CHARACTER SET utf8mb4 
-COLLATE utf8mb4_unicode_ci;
-
-USE minha_api_db;
+-- No Supabase NÃO se cria database, já existe o padrão "postgres"
+-- Caso queira organizar tudo, você pode criar um schema:
+-- CREATE SCHEMA balcao;
 
 -- ============================================
 -- Tabela: usuarios
--- Descrição: Armazena os usuários do sistema
 -- ============================================
+
 CREATE TABLE IF NOT EXISTS usuarios (
-  id INT AUTO_INCREMENT PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   nome VARCHAR(100) NOT NULL,
   email VARCHAR(100) UNIQUE NOT NULL,
-  senha VARCHAR(255) NOT NULL COMMENT 'Senha criptografada com bcrypt',
-  ativo BOOLEAN DEFAULT TRUE COMMENT 'Status do usuário',
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Tabela de usuários do sistema';
+  senha VARCHAR(255) NOT NULL,
+  ativo BOOLEAN DEFAULT TRUE
+);
+
+COMMENT ON COLUMN usuarios.senha IS 'Senha criptografada com bcrypt';
+COMMENT ON COLUMN usuarios.ativo IS 'Status do usuário';
 
 -- ============================================
 -- Tabela: contatos
--- Descrição: Armazena contatos enviados pelo site
 -- ============================================
+
 CREATE TABLE IF NOT EXISTS contatos (
-  id INT AUTO_INCREMENT PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   nome VARCHAR(100) NOT NULL,
   email VARCHAR(100) NOT NULL,
-  telefone VARCHAR(20) NULL,
-  cidade VARCHAR(100) NULL,
-  tipo VARCHAR(50) NULL COMMENT 'Tipo do contato (ex: cliente, fornecedor, parceiro)',
-  
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Tabela de contatos recebidos';
+  telefone VARCHAR(20),
+  cidade VARCHAR(100),
+  tipo VARCHAR(50)
+);
+
+COMMENT ON COLUMN contatos.tipo IS 'Tipo do contato (ex: cliente, fornecedor, parceiro)';
 
 -- ============================================
 -- Tabela: empresas
--- Descrição: Armazena informações de empresas
 -- ============================================
+
 CREATE TABLE IF NOT EXISTS empresas (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  titulo VARCHAR(200) NOT NULL,
+  id SERIAL PRIMARY KEY,
   nome VARCHAR(200) NOT NULL,
   setor VARCHAR(200) NOT NULL,
-  cnpj VARCHAR(14) UNIQUE NOT NULL COMMENT 'CNPJ apenas números',
-  razao_social VARCHAR(200) NULL,
+  cnpj VARCHAR(14) UNIQUE NOT NULL,
+  razao_social VARCHAR(200),
   email VARCHAR(100) NOT NULL,
-  telefone VARCHAR(20) NULL,
-  localizacao VARCHAR(255) NULL,
-  info VARCHAR(200) NULL,
-  lucro DECIMAL(15, 2) NULL COMMENT 'Lucro em reais',
-  valor DECIMAL(15, 2) NULL COMMENT 'Valor em reais',
-  faturamento DECIMAL(15, 2) NULL COMMENT 'Faturamento em reais',
-  tipo VARCHAR(50) NULL COMMENT 'Tipo/ área da empresa',
-  descricao TEXT NULL COMMENT 'Descrição detalhada da empresa',
+  telefone VARCHAR(20),
+  localizacao VARCHAR(255),
+  info VARCHAR(200),
+  lucro DECIMAL(15,2),
+  valor DECIMAL(15,2),
+  faturamento DECIMAL(15,2),
+  tipo VARCHAR(50),
   ano_fundacao INT,
-  tempo_operacao INT,
-  assinatura INT COMMENT 'Tempo em dias',
+  assinatura INT,
   funcionarios INT,
-  area_imovel DECIMAL(15, 2) NULL,
-  tipo_imovel VARCHAR(200) NULL,
-  motivo_venda VARCHAR(500) NULL,
-  dif VARCHAR(500) NULL,
-  img VARCHAR(500) NULL,
-  ativo BOOLEAN DEFAULT TRUE COMMENT 'Status da empresa',
+  tipo_imovel VARCHAR(200),
+  dif VARCHAR(500),
+  img VARCHAR(500),
+  ativo BOOLEAN DEFAULT TRUE
+);
 
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Tabela de empresas cadastradas';
-
--- ============================================
--- Dados de exemplo (opcional)
--- ============================================
-
--- Inserir usuário admin de teste
--- Senha: admin123 (você precisará gerar o hash real com bcrypt)
-INSERT INTO usuarios (nome, email, senha, ativo) VALUES 
-('Administrador', 'admin@exemplo.com', '$2b$10$rX5YqJk5qJHGqZ9nqVz9xO8KqQ7EqJHgqZ9nqVz9xO8KqQ7EqJHgq', TRUE);
-
--- Inserir alguns contatos de exemplo
-INSERT INTO contatos (nome, email, telefone, cidade, tipo) VALUES
-('João Silva', 'joao@exemplo.com', '(15) 99999-9999', 'Sorocaba', 'cliente'),
-('Maria Santos', 'maria@exemplo.com', '(11) 98888-8888', 'São Paulo', 'parceiro'),
-('Pedro Oliveira', 'pedro@exemplo.com', '(19) 97777-7777', 'Campinas', 'fornecedor');
-
--- Inserir algumas empresas de exemplo
-INSERT INTO empresas (nome, cnpj, razao_social, email, telefone, cidade, estado, valor, faturamento, tipo, descricao, ativo) VALUES
-('Tech Solutions LTDA', '12345678000190', 'Tech Solutions Tecnologia LTDA', 'contato@techsolutions.com', '(15) 3333-4444', 'Sorocaba', 'SP', 50000.00, 1500000.00, 'cliente', 'Empresa de tecnologia especializada em desenvolvimento de software', TRUE),
-('Comércio XYZ', '98765432000180', 'XYZ Comércio e Serviços LTDA', 'comercio@xyz.com', '(11) 2222-3333', 'São Paulo', 'SP', 25000.00, 800000.00, 'parceiro', 'Comércio varejista de produtos diversos', TRUE),
-('Indústria ABC', '11223344000155', 'ABC Indústria e Comércio S.A.', 'contato@abc.com', '(19) 3344-5566', 'Campinas', 'SP', 100000.00, 5000000.00, 'fornecedor', 'Indústria de componentes eletrônicos', TRUE);
-
--- ============================================
--- Verificação final
--- ============================================
-
-SHOW TABLES;
-
-SELECT 'Banco de dados criado com sucesso!' AS status;
+COMMENT ON COLUMN empresas.cnpj IS 'CNPJ apenas números';
+COMMENT ON COLUMN empresas.lucro IS 'Lucro em reais';
+COMMENT ON COLUMN empresas.valor IS 'Valor em reais';
+COMMENT ON COLUMN empresas.faturamento IS 'Faturamento em reais';
+COMMENT ON COLUMN empresas.tipo IS 'Tipo/ área da empresa';
+COMMENT ON COLUMN empresas.assinatura IS 'Tempo em dias';
+COMMENT ON COLUMN empresas.ativo IS 'Status da empresa';

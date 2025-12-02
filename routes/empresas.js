@@ -16,7 +16,6 @@ const validarCNPJ = (cnpj) => {
  *     Empresa:
  *       type: object
  *       required:
- *         - titulo
  *         - nome
  *         - setor
  *         - cnpj
@@ -25,9 +24,6 @@ const validarCNPJ = (cnpj) => {
  *         id:
  *           type: integer
  *           description: ID da empresa
- *         titulo:
- *           type: string
- *           description: Título da empresa
  *         nome:
  *           type: string
  *           description: Nome da empresa
@@ -68,31 +64,18 @@ const validarCNPJ = (cnpj) => {
  *         tipo:
  *           type: string
  *           description: Tipo/área da empresa
- *         descricao:
- *           type: string
- *           description: Descrição detalhada da empresa
  *         ano_fundacao:
  *           type: integer
  *           description: Ano de fundação
- *         tempo_operacao:
- *           type: integer
- *           description: Tempo de operação
  *         assinatura:
  *           type: integer
  *           description: Tempo de assinatura em dias
  *         funcionarios:
  *           type: integer
  *           description: Número de funcionários
- *         area_imovel:
- *           type: number
- *           format: float
- *           description: Área do imóvel
  *         tipo_imovel:
  *           type: string
  *           description: Tipo do imóvel
- *         motivo_venda:
- *           type: string
- *           description: Motivo da venda
  *         dif:
  *           type: string
  *           description: Diferenciais
@@ -102,13 +85,8 @@ const validarCNPJ = (cnpj) => {
  *         ativo:
  *           type: boolean
  *           description: Status da empresa
- *         criado_em:
- *           type: string
- *           format: date-time
- *           description: Data de criação
  *       example:
  *         id: 1
- *         titulo: Empresa de Tecnologia em Expansão
  *         nome: Tech Solutions LTDA
  *         setor: Tecnologia
  *         cnpj: "12345678000190"
@@ -139,15 +117,11 @@ const validarCNPJ = (cnpj) => {
  *           schema:
  *             type: object
  *             required:
- *               - titulo
  *               - nome
  *               - setor
  *               - cnpj
  *               - email
  *             properties:
- *               titulo:
- *                 type: string
- *                 example: Empresa de Tecnologia em Expansão
  *               nome:
  *                 type: string
  *                 example: Tech Solutions LTDA
@@ -188,31 +162,18 @@ const validarCNPJ = (cnpj) => {
  *               tipo:
  *                 type: string
  *                 example: Desenvolvimento de Software
- *               descricao:
- *                 type: string
- *                 example: Empresa de tecnologia especializada em desenvolvimento de sistemas
  *               ano_fundacao:
  *                 type: integer
  *                 example: 2010
- *               tempo_operacao:
- *                 type: integer
- *                 example: 15
  *               assinatura:
  *                 type: integer
  *                 example: 365
  *               funcionarios:
  *                 type: integer
  *                 example: 50
- *               area_imovel:
- *                 type: number
- *                 format: float
- *                 example: 500.00
  *               tipo_imovel:
  *                 type: string
  *                 example: Comercial
- *               motivo_venda:
- *                 type: string
- *                 example: Mudança de cidade
  *               dif:
  *                 type: string
  *                 example: Carteira de clientes consolidada
@@ -242,20 +203,20 @@ const validarCNPJ = (cnpj) => {
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/', async (req, res) => {
+router.post('/', autenticar, async (req, res) => {
   try {
     const { 
-      titulo, nome, setor, cnpj, razao_social, email, telefone, 
-      localizacao, info, lucro, valor, faturamento, tipo, descricao,
-      ano_fundacao, tempo_operacao, assinatura, funcionarios, area_imovel, 
-      tipo_imovel, motivo_venda, dif, img
+      nome, setor, cnpj, razao_social, email, telefone, 
+      localizacao, info, lucro, valor, faturamento, tipo,
+      ano_fundacao, assinatura, funcionarios, 
+      tipo_imovel, dif, img
     } = req.body;
 
     // Validações
-    if (!titulo || !nome || !setor || !cnpj || !email) {
+    if (!nome || !setor || !cnpj || !email) {
       return res.status(400).json({
         sucesso: false,
-        mensagem: 'Título, nome, setor, CNPJ e email são obrigatórios'
+        mensagem: 'Nome, setor, CNPJ e email são obrigatórios'
       });
     }
 
@@ -266,10 +227,12 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Verificar se CNPJ já existe (PostgreSQL usa $1 ao invés de ?)
+    const cnpjLimpo = cnpj.replace(/[^\d]/g, '');
+
+    // Verificar se CNPJ já existe
     const empresaExistente = await pool.query(
       'SELECT id FROM empresas WHERE cnpj = $1',
-      [cnpj.replace(/[^\d]/g, '')]
+      [cnpjLimpo]
     );
 
     if (empresaExistente.rows.length > 0) {
@@ -279,23 +242,22 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Inserir empresa (PostgreSQL usa $1, $2, etc. e RETURNING ao invés de insertId)
+    // Inserir empresa
     const query = `
       INSERT INTO empresas (
-        titulo, nome, setor, cnpj, razao_social, email, telefone, 
-        localizacao, info, lucro, valor, faturamento, tipo, descricao,
-        ano_fundacao, tempo_operacao, assinatura, funcionarios, area_imovel, 
-        tipo_imovel, motivo_venda, dif, img, ativo
+        nome, setor, cnpj, razao_social, email, telefone, 
+        localizacao, info, lucro, valor, faturamento, tipo,
+        ano_fundacao, assinatura, funcionarios, 
+        tipo_imovel, dif, img, ativo
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, TRUE)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING id
     `;
 
     const resultado = await pool.query(query, [
-      titulo,
       nome,
       setor,
-      cnpj.replace(/[^\d]/g, ''),
+      cnpjLimpo,
       razao_social || null,
       email,
       telefone || null,
@@ -305,16 +267,13 @@ router.post('/', async (req, res) => {
       valor || null,
       faturamento || null,
       tipo || null,
-      descricao || null,
       ano_fundacao || null,
-      tempo_operacao || null,
       assinatura || null,
       funcionarios || null,
-      area_imovel || null,
       tipo_imovel || null,
-      motivo_venda || null,
       dif || null,
-      img || null
+      img || null,
+      true
     ]);
 
     res.status(201).json({
@@ -327,7 +286,8 @@ router.post('/', async (req, res) => {
     console.error('Erro ao criar empresa:', erro);
     res.status(500).json({
       sucesso: false,
-      mensagem: 'Erro ao criar empresa'
+      mensagem: 'Erro ao criar empresa',
+      erro: erro.message
     });
   }
 });
@@ -362,10 +322,10 @@ router.post('/', async (req, res) => {
 router.get('/', autenticar, async (req, res) => {
   try {
     const query = `
-      SELECT id, titulo, nome, setor, cnpj, razao_social, email, telefone, 
-             localizacao, info, lucro, valor, faturamento, tipo, descricao,
-             ano_fundacao, tempo_operacao, assinatura, funcionarios, area_imovel, 
-             tipo_imovel, motivo_venda, dif, img, ativo
+      SELECT id, nome, setor, cnpj, razao_social, email, telefone, 
+             localizacao, info, lucro, valor, faturamento, tipo,
+             ano_fundacao, assinatura, funcionarios, 
+             tipo_imovel, dif, img, ativo
       FROM empresas
       ORDER BY nome ASC
     `;
@@ -470,8 +430,6 @@ router.get('/:id', autenticar, async (req, res) => {
  *           schema:
  *             type: object
  *             properties:
- *               titulo:
- *                 type: string
  *               nome:
  *                 type: string
  *               setor:
@@ -498,22 +456,13 @@ router.get('/:id', autenticar, async (req, res) => {
  *                 format: float
  *               tipo:
  *                 type: string
- *               descricao:
- *                 type: string
  *               ano_fundacao:
- *                 type: integer
- *               tempo_operacao:
  *                 type: integer
  *               assinatura:
  *                 type: integer
  *               funcionarios:
  *                 type: integer
- *               area_imovel:
- *                 type: number
- *                 format: float
  *               tipo_imovel:
- *                 type: string
- *               motivo_venda:
  *                 type: string
  *               dif:
  *                 type: string
@@ -544,10 +493,10 @@ router.put('/:id', autenticar, async (req, res) => {
   try {
     const { id } = req.params;
     const { 
-      titulo, nome, setor, razao_social, email, telefone, 
-      localizacao, info, lucro, valor, faturamento, tipo, descricao,
-      ano_fundacao, tempo_operacao, assinatura, funcionarios, area_imovel, 
-      tipo_imovel, motivo_venda, dif, img, ativo 
+      nome, setor, razao_social, email, telefone, 
+      localizacao, info, lucro, valor, faturamento, tipo,
+      ano_fundacao, assinatura, funcionarios, 
+      tipo_imovel, dif, img, ativo 
     } = req.body;
 
     // Verificar se empresa existe
@@ -565,16 +514,15 @@ router.put('/:id', autenticar, async (req, res) => {
 
     const query = `
       UPDATE empresas
-      SET titulo = $1, nome = $2, setor = $3, razao_social = $4, email = $5, 
-          telefone = $6, localizacao = $7, info = $8, lucro = $9, valor = $10, 
-          faturamento = $11, tipo = $12, descricao = $13, ano_fundacao = $14, 
-          tempo_operacao = $15, assinatura = $16, funcionarios = $17, area_imovel = $18, 
-          tipo_imovel = $19, motivo_venda = $20, dif = $21, img = $22, ativo = $23
-      WHERE id = $24
+      SET nome = $1, setor = $2, razao_social = $3, email = $4, 
+          telefone = $5, localizacao = $6, info = $7, lucro = $8, valor = $9, 
+          faturamento = $10, tipo = $11, ano_fundacao = $12, 
+          assinatura = $13, funcionarios = $14, 
+          tipo_imovel = $15, dif = $16, img = $17, ativo = $18
+      WHERE id = $19
     `;
 
     await pool.query(query, [
-      titulo,
       nome,
       setor,
       razao_social,
@@ -586,14 +534,10 @@ router.put('/:id', autenticar, async (req, res) => {
       valor,
       faturamento,
       tipo,
-      descricao,
       ano_fundacao,
-      tempo_operacao,
       assinatura,
       funcionarios,
-      area_imovel,
       tipo_imovel,
-      motivo_venda,
       dif,
       img,
       ativo !== undefined ? ativo : true,
