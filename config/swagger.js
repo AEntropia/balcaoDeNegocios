@@ -19,7 +19,7 @@ const options = {
         description: 'Servidor de Desenvolvimento'
       },
       {
-        url: 'https://sua-api.com',
+        url: 'http://localhost:3000',
         description: 'Servidor de Produção'
       }
     ],

@@ -128,9 +128,6 @@ const validarCNPJ = (cnpj) => {
  *         ano_fundacao:
  *           type: integer
  *           description: Ano de fundação
- *         assinatura:
- *           type: integer
- *           description: Tempo de assinatura em dias
  *         funcionarios:
  *           type: integer
  *           description: Número de funcionários
@@ -146,6 +143,18 @@ const validarCNPJ = (cnpj) => {
  *         ativo:
  *           type: boolean
  *           description: Status da empresa
+ *         data_inicio_assinatura:
+ *           type: string
+ *           format: date
+ *           description: Data de início da assinatura (YYYY-MM-DD)
+ *         data_fim_assinatura:
+ *           type: string
+ *           format: date
+ *           description: Data de término da assinatura (YYYY-MM-DD)
+ *         status_assinatura:
+ *           type: string
+ *           enum: [ativa, expirando, expirada, cancelada]
+ *           description: Status da assinatura
  *       example:
  *         id: 1
  *         nome: Tech Solutions LTDA
@@ -158,9 +167,11 @@ const validarCNPJ = (cnpj) => {
  *         lucro: 500000.00
  *         faturamento: 1500000.00
  *         ano_fundacao: 2010
- *         assinatura: 365
  *         funcionarios: 50
  *         ativo: true
+ *         data_inicio_assinatura: "2024-01-01"
+ *         data_fim_assinatura: "2025-01-01"
+ *         status_assinatura: ativa
  */
 
 /**
@@ -231,9 +242,6 @@ const validarCNPJ = (cnpj) => {
  *               ano_fundacao:
  *                 type: integer
  *                 example: 2010
- *               assinatura:
- *                 type: integer
- *                 example: 365
  *               funcionarios:
  *                 type: integer
  *                 example: 50
@@ -243,6 +251,21 @@ const validarCNPJ = (cnpj) => {
  *               dif:
  *                 type: string
  *                 example: Carteira de clientes consolidada
+ *               data_inicio_assinatura:
+ *                 type: string
+ *                 format: date
+ *                 example: "2024-01-01"
+ *                 description: Data de início da assinatura (formato YYYY-MM-DD)
+ *               data_fim_assinatura:
+ *                 type: string
+ *                 format: date
+ *                 example: "2025-01-01"
+ *                 description: Data de término da assinatura (formato YYYY-MM-DD)
+ *               status_assinatura:
+ *                 type: string
+ *                 enum: [ativa, expirando, expirada, cancelada]
+ *                 example: ativa
+ *                 description: Status da assinatura
  *     responses:
  *       201:
  *         description: Empresa criada com sucesso
@@ -273,8 +296,8 @@ router.post('/', autenticar, upload.single('imagem'), async (req, res) => {
     const { 
       nome, setor, cnpj, razao_social, email, telefone, 
       localizacao, info, lucro, valor, faturamento, tipo,
-      ano_fundacao, assinatura, funcionarios, 
-      tipo_imovel, dif
+      ano_fundacao, funcionarios, tipo_imovel, dif,
+      data_inicio_assinatura, data_fim_assinatura, status_assinatura
     } = req.body;
 
     // Validações
@@ -326,10 +349,10 @@ router.post('/', autenticar, upload.single('imagem'), async (req, res) => {
       INSERT INTO empresas (
         nome, setor, cnpj, razao_social, email, telefone, 
         localizacao, info, lucro, valor, faturamento, tipo,
-        ano_fundacao, assinatura, funcionarios, 
-        tipo_imovel, dif, img, ativo
+        ano_fundacao, funcionarios, tipo_imovel, dif, img, ativo,
+        data_inicio_assinatura, data_fim_assinatura, status_assinatura
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING id
     `;
 
@@ -347,12 +370,14 @@ router.post('/', autenticar, upload.single('imagem'), async (req, res) => {
       faturamento || null,
       tipo || null,
       ano_fundacao || null,
-      assinatura || null,
       funcionarios || null,
       tipo_imovel || null,
       dif || null,
       imagemUrl,
-      true
+      true,
+      data_inicio_assinatura || null,
+      data_fim_assinatura || null,
+      status_assinatura || 'ativa'
     ]);
 
     res.status(201).json({
@@ -404,8 +429,8 @@ router.get('/', autenticar, async (req, res) => {
     const query = `
       SELECT id, nome, setor, cnpj, razao_social, email, telefone, 
              localizacao, info, lucro, valor, faturamento, tipo,
-             ano_fundacao, assinatura, funcionarios, 
-             tipo_imovel, dif, img, ativo
+             ano_fundacao, funcionarios, tipo_imovel, dif, img, ativo,
+             data_inicio_assinatura, data_fim_assinatura, status_assinatura
       FROM empresas
       ORDER BY nome ASC
     `;
@@ -543,8 +568,6 @@ router.get('/:id', autenticar, async (req, res) => {
  *                 type: string
  *               ano_fundacao:
  *                 type: integer
- *               assinatura:
- *                 type: integer
  *               funcionarios:
  *                 type: integer
  *               tipo_imovel:
@@ -553,6 +576,20 @@ router.get('/:id', autenticar, async (req, res) => {
  *                 type: string
  *               ativo:
  *                 type: boolean
+ *               data_inicio_assinatura:
+ *                 type: string
+ *                 format: date
+ *                 example: "2024-01-01"
+ *                 description: Data de início da assinatura (formato YYYY-MM-DD)
+ *               data_fim_assinatura:
+ *                 type: string
+ *                 format: date
+ *                 example: "2025-01-01"
+ *                 description: Data de término da assinatura (formato YYYY-MM-DD)
+ *               status_assinatura:
+ *                 type: string
+ *                 enum: [ativa, expirando, expirada, cancelada]
+ *                 description: Status da assinatura
  *     responses:
  *       200:
  *         description: Empresa atualizada com sucesso
@@ -580,8 +617,8 @@ router.put('/:id', autenticar, upload.single('imagem'), async (req, res) => {
     const { 
       nome, setor, razao_social, email, telefone, 
       localizacao, info, lucro, valor, faturamento, tipo,
-      ano_fundacao, assinatura, funcionarios, 
-      tipo_imovel, dif, ativo 
+      ano_fundacao, funcionarios, tipo_imovel, dif, ativo,
+      data_inicio_assinatura, data_fim_assinatura, status_assinatura
     } = req.body;
 
     // Verificar se empresa existe e pegar imagem antiga
@@ -623,9 +660,9 @@ router.put('/:id', autenticar, upload.single('imagem'), async (req, res) => {
       SET nome = $1, setor = $2, razao_social = $3, email = $4, 
           telefone = $5, localizacao = $6, info = $7, lucro = $8, valor = $9, 
           faturamento = $10, tipo = $11, ano_fundacao = $12, 
-          assinatura = $13, funcionarios = $14, 
-          tipo_imovel = $15, dif = $16, img = $17, ativo = $18
-      WHERE id = $19
+          funcionarios = $13, tipo_imovel = $14, dif = $15, img = $16, ativo = $17,
+          data_inicio_assinatura = $18, data_fim_assinatura = $19, status_assinatura = $20
+      WHERE id = $21
     `;
 
     await pool.query(query, [
@@ -641,12 +678,14 @@ router.put('/:id', autenticar, upload.single('imagem'), async (req, res) => {
       faturamento,
       tipo,
       ano_fundacao,
-      assinatura,
       funcionarios,
       tipo_imovel,
       dif,
       imagemUrl,
       ativo !== undefined ? ativo : true,
+      data_inicio_assinatura || null,
+      data_fim_assinatura || null,
+      status_assinatura || null,
       id
     ]);
 

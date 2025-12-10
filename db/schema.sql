@@ -40,7 +40,7 @@ COMMENT ON COLUMN contatos.tipo IS 'Tipo do contato (ex: cliente, fornecedor, pa
 -- Tabela: empresas
 -- ============================================
 
-CREATE TABLE IF NOT EXISTS empresas (
+CREATE TABLE empresas (
   id SERIAL PRIMARY KEY,
   nome VARCHAR(200) NOT NULL,
   setor VARCHAR(200) NOT NULL,
@@ -55,18 +55,61 @@ CREATE TABLE IF NOT EXISTS empresas (
   faturamento DECIMAL(15,2),
   tipo VARCHAR(50),
   ano_fundacao INT,
-  assinatura INT,
   funcionarios INT,
   tipo_imovel VARCHAR(200),
   dif VARCHAR(500),
   img VARCHAR(500),
-  ativo BOOLEAN DEFAULT TRUE
+  ativo BOOLEAN DEFAULT TRUE,
+  
+  -- Campos de controle de assinatura
+  data_inicio_assinatura DATE,
+  data_fim_assinatura DATE,
+  status_assinatura VARCHAR(20) DEFAULT 'ativa'
 );
+
+-- =====================================================
+-- PASSO 2: Adicionar comentários nas colunas
+-- =====================================================
 
 COMMENT ON COLUMN empresas.cnpj IS 'CNPJ apenas números';
 COMMENT ON COLUMN empresas.lucro IS 'Lucro em reais';
 COMMENT ON COLUMN empresas.valor IS 'Valor em reais';
 COMMENT ON COLUMN empresas.faturamento IS 'Faturamento em reais';
-COMMENT ON COLUMN empresas.tipo IS 'Tipo/ área da empresa';
-COMMENT ON COLUMN empresas.assinatura IS 'Tempo em dias';
+COMMENT ON COLUMN empresas.tipo IS 'Tipo/área da empresa';
 COMMENT ON COLUMN empresas.ativo IS 'Status da empresa';
+COMMENT ON COLUMN empresas.data_inicio_assinatura IS 'Data de início da assinatura atual';
+COMMENT ON COLUMN empresas.data_fim_assinatura IS 'Data de término da assinatura';
+COMMENT ON COLUMN empresas.status_assinatura IS 'Status: ativa, expirando, expirada, cancelada';
+
+-- =====================================================
+-- PASSO 3: Criar índices para otimização
+-- =====================================================
+
+CREATE INDEX idx_empresas_assinatura 
+ON empresas(data_fim_assinatura, ativo) 
+WHERE ativo = TRUE;
+
+CREATE INDEX idx_empresas_cnpj 
+ON empresas(cnpj);
+
+CREATE INDEX idx_empresas_setor 
+ON empresas(setor);
+
+-- =====================================================
+-- PASSO 4: Criar view para cálculo automático de status
+-- =====================================================
+
+CREATE OR REPLACE VIEW empresas_com_status AS
+SELECT 
+  *,
+  CASE 
+    WHEN data_fim_assinatura IS NULL THEN 'sem_assinatura'
+    WHEN data_fim_assinatura < CURRENT_DATE THEN 'expirada'
+    WHEN (data_fim_assinatura - CURRENT_DATE) <= 7 THEN 'expirando'
+    ELSE 'ativa'
+  END as status_calculado,
+  CASE 
+    WHEN data_fim_assinatura IS NULL THEN NULL
+    ELSE (data_fim_assinatura - CURRENT_DATE)
+  END as dias_restantes
+FROM empresas;
