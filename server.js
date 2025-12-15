@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const swaggerSpecs = require('./config/swagger');
 const cookieParser = require('cookie-parser');
+const { iniciarCronJob } = require('./jobs/verificarAssinaturas')
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -171,7 +172,7 @@ app.use((err, req, res, next) => {
     ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
   });
 });
-
+iniciarCronJob()
 // Iniciar servidor apenas se não for Vercel
 if (require.main === module) {
   app.listen(PORT, () => {
