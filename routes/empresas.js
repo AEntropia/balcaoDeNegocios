@@ -64,12 +64,6 @@ const deletarImagemSupabase = async (imagemUrl) => {
   }
 };
 
-// Validação de CNPJ
-const validarCNPJ = (cnpj) => {
-  cnpj = cnpj.replace(/[^\d]/g, '');
-  return cnpj.length === 14;
-};
-
 /**
  * @swagger
  * components:
@@ -77,69 +71,93 @@ const validarCNPJ = (cnpj) => {
  *     Empresa:
  *       type: object
  *       required:
- *         - nome
+ *         - cnae
  *         - setor
- *         - cnpj
+ *         - estado
+ *         - cidade
  *         - email
+ *         - telefone
  *       properties:
  *         id:
  *           type: integer
  *           description: ID da empresa
- *         nome:
+ *         cnae:
  *           type: string
- *           description: Nome da empresa
+ *           description: CNAE da empresa (código e descrição)
+ *           example: "7420002 - ATIVIDADES DE PRODUÇÃO DE FOTOGRAFIAS AÉREAS E SUBMARINAS"
  *         setor:
  *           type: string
  *           description: Setor de atuação
- *         cnpj:
+ *           example: "ATIVIDADES PROFISSIONAIS, CIENTÍFICAS E TÉCNICAS"
+ *         estado:
  *           type: string
- *           description: CNPJ da empresa (apenas números)
- *         razao_social:
+ *           description: Estado (UF)
+ *           example: "MG"
+ *         cidade:
  *           type: string
- *           description: Razão social da empresa
+ *           description: Cidade
+ *           example: "Além Paraíba"
+ *         faturamentoAnual:
+ *           type: string
+ *           description: Faixa de faturamento anual
+ *           example: "Microempresa - Até R$ 360 mil/ano"
+ *         margemLucro:
+ *           type: string
+ *           description: Faixa de margem de lucro
+ *           example: "Baixa - De 1% a 10%"
+ *         precoVenda:
+ *           type: string
+ *           description: Preço de venda
+ *           example: "R$ 250.000,00"
+ *         anoFundacao:
+ *           type: string
+ *           description: Ano de fundação
+ *           example: "2000"
+ *         numeroFuncionarios:
+ *           type: string
+ *           description: Faixa de número de funcionários
+ *           example: "6 a 10 funcionários"
+ *         tipoImovel:
+ *           type: string
+ *           description: Tipo do imóvel
+ *           example: "Alugado (shopping)"
+ *         destaques:
+ *           type: array
+ *           items:
+ *             type: string
+ *           description: Lista de destaques da empresa
+ *           example: ["Alto fluxo de clientes", "Carteira de clientes fidelizados"]
+ *         imagens:
+ *           type: array
+ *           items:
+ *             type: string
+ *           description: URLs das imagens
+ *           example: []
+ *         numeroCartao:
+ *           type: string
+ *           description: Número do cartão (apenas últimos 4 dígitos serão armazenados)
+ *           example: "1234 1234 1234 1234"
+ *         nomeCartao:
+ *           type: string
+ *           description: Nome no cartão
+ *           example: "CIANO M SILVA"
+ *         validadeCartao:
+ *           type: string
+ *           description: Validade do cartão
+ *           example: "10/40"
+ *         cvv:
+ *           type: string
+ *           description: CVV do cartão (não será armazenado)
+ *           example: "123"
+ *         telefone:
+ *           type: string
+ *           description: Telefone de contato
+ *           example: "15981156556"
  *         email:
  *           type: string
  *           format: email
- *           description: Email da empresa
- *         telefone:
- *           type: string
- *           description: Telefone da empresa
- *         localizacao:
- *           type: string
- *           description: Localização da empresa
- *         info:
- *           type: string
- *           description: Informações adicionais
- *         lucro:
- *           type: number
- *           format: float
- *           description: Lucro em reais
- *         valor:
- *           type: number
- *           format: float
- *           description: Valor em reais
- *         faturamento:
- *           type: number
- *           format: float
- *           description: Faturamento anual em reais
- *         tipo:
- *           type: string
- *           description: Tipo/área da empresa
- *         ano_fundacao:
- *           type: integer
- *           description: Ano de fundação
- *         funcionarios:
- *           type: integer
- *           description: Número de funcionários
- *         tipo_imovel:
- *           type: string
- *           description: Tipo do imóvel
- *         dif:
- *           type: string
- *           description: Diferenciais
- *         img:
- *           type: string
- *           description: URL da imagem
+ *           description: Email de contato
+ *           example: "exemplo@email.com"
  *         ativo:
  *           type: boolean
  *           description: Status da empresa
@@ -155,35 +173,17 @@ const validarCNPJ = (cnpj) => {
  *           type: string
  *           enum: [ativa, expirando, expirada, cancelada]
  *           description: Status da assinatura
- *       example:
- *         id: 1
- *         nome: Tech Solutions LTDA
- *         setor: Tecnologia
- *         cnpj: "12345678000190"
- *         razao_social: Tech Solutions Tecnologia LTDA
- *         email: contato@techsolutions.com
- *         telefone: (15) 3333-4444
- *         localizacao: Sorocaba - SP
- *         lucro: 500000.00
- *         faturamento: 1500000.00
- *         ano_fundacao: 2010
- *         funcionarios: 50
- *         ativo: true
- *         data_inicio_assinatura: "2024-01-01"
- *         data_fim_assinatura: "2025-01-01"
- *         status_assinatura: ativa
  */
 
 /**
  * @swagger
  * /api/empresas:
  *   post:
- *     summary: Criar nova empresa (use Postman/Insomnia para enviar com imagem)
+ *     summary: Criar nova empresa
  *     description: |
- *       ⚠️ **UPLOAD DE IMAGENS**: Esta rota aceita multipart/form-data para upload de imagens.
- *       Para testar com imagem, use Postman, Insomnia ou Thunder Client.
- *       
- *       No Swagger você pode criar empresas sem imagem usando JSON.
+ *       Cria uma nova empresa no sistema. 
+ *       ⚠️ IMPORTANTE: Os dados do cartão (numeroCartao, cvv) não serão armazenados por questões de segurança PCI-DSS.
+ *       Apenas os últimos 4 dígitos do cartão serão salvos para referência.
  *     tags: [Empresas]
  *     security:
  *       - bearerAuth: []
@@ -194,78 +194,84 @@ const validarCNPJ = (cnpj) => {
  *           schema:
  *             type: object
  *             required:
- *               - nome
+ *               - cnae
  *               - setor
- *               - cnpj
+ *               - estado
+ *               - cidade
  *               - email
+ *               - telefone
  *             properties:
- *               nome:
+ *               cnae:
  *                 type: string
- *                 example: Tech Solutions LTDA
+ *                 example: "7420002 - ATIVIDADES DE PRODUÇÃO DE FOTOGRAFIAS AÉREAS E SUBMARINAS"
  *               setor:
  *                 type: string
- *                 example: Tecnologia
- *               cnpj:
+ *                 example: "ATIVIDADES PROFISSIONAIS, CIENTÍFICAS E TÉCNICAS"
+ *               estado:
  *                 type: string
- *                 example: "12345678000190"
- *               razao_social:
+ *                 example: "MG"
+ *               cidade:
  *                 type: string
- *                 example: Tech Solutions Tecnologia LTDA
+ *                 example: "Além Paraíba"
+ *               faturamentoAnual:
+ *                 type: string
+ *                 example: "Microempresa - Até R$ 360 mil/ano"
+ *               margemLucro:
+ *                 type: string
+ *                 example: "Baixa - De 1% a 10%"
+ *               precoVenda:
+ *                 type: string
+ *                 example: "R$ 250.000,00"
+ *               anoFundacao:
+ *                 type: string
+ *                 example: "2000"
+ *               numeroFuncionarios:
+ *                 type: string
+ *                 example: "6 a 10 funcionários"
+ *               tipoImovel:
+ *                 type: string
+ *                 example: "Alugado (shopping)"
+ *               destaques:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["Alto fluxo de clientes", "Carteira de clientes fidelizados"]
+ *               imagens:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: []
+ *               numeroCartao:
+ *                 type: string
+ *                 example: "1234 1234 1234 1234"
+ *               nomeCartao:
+ *                 type: string
+ *                 example: "CIANO M SILVA"
+ *               validadeCartao:
+ *                 type: string
+ *                 example: "10/40"
+ *               cvv:
+ *                 type: string
+ *                 example: "123"
+ *               telefone:
+ *                 type: string
+ *                 example: "15981156556"
  *               email:
  *                 type: string
  *                 format: email
- *                 example: contato@techsolutions.com
- *               telefone:
- *                 type: string
- *                 example: (15) 3333-4444
- *               localizacao:
- *                 type: string
- *                 example: Sorocaba - SP
- *               info:
- *                 type: string
- *                 example: Empresa consolidada no mercado
- *               lucro:
- *                 type: number
- *                 format: float
- *                 example: 500000.00
- *               valor:
- *                 type: number
- *                 format: float
- *                 example: 2000000.00
- *               faturamento:
- *                 type: number
- *                 format: float
- *                 example: 1500000.00
- *               tipo:
- *                 type: string
- *                 example: Desenvolvimento de Software
- *               ano_fundacao:
- *                 type: integer
- *                 example: 2010
- *               funcionarios:
- *                 type: integer
- *                 example: 50
- *               tipo_imovel:
- *                 type: string
- *                 example: Comercial
- *               dif:
- *                 type: string
- *                 example: Carteira de clientes consolidada
+ *                 example: "exemplo@email.com"
  *               data_inicio_assinatura:
  *                 type: string
  *                 format: date
  *                 example: "2024-01-01"
- *                 description: Data de início da assinatura (formato YYYY-MM-DD)
  *               data_fim_assinatura:
  *                 type: string
  *                 format: date
  *                 example: "2025-01-01"
- *                 description: Data de término da assinatura (formato YYYY-MM-DD)
  *               status_assinatura:
  *                 type: string
  *                 enum: [ativa, expirando, expirada, cancelada]
  *                 example: ativa
- *                 description: Status da assinatura
  *     responses:
  *       201:
  *         description: Empresa criada com sucesso
@@ -280,76 +286,68 @@ const validarCNPJ = (cnpj) => {
  *                   type: string
  *                 id:
  *                   type: integer
- *                 imagem_url:
- *                   type: string
  *       400:
  *         description: Erro de validação
- *       409:
- *         description: CNPJ já cadastrado
  *       401:
  *         description: Não autorizado
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/', autenticar, upload.single('imagem'), async (req, res) => {
+router.post('/', autenticar, async (req, res) => {
   try {
     const { 
-      nome, setor, cnpj, razao_social, email, telefone, 
-      localizacao, info, lucro, valor, faturamento, tipo,
-      ano_fundacao, funcionarios, tipo_imovel, dif,
-      data_inicio_assinatura, data_fim_assinatura, status_assinatura
+      cnae,
+      setor,
+      estado,
+      cidade,
+      faturamentoAnual,
+      margemLucro,
+      precoVenda,
+      anoFundacao,
+      numeroFuncionarios,
+      tipoImovel,
+      destaques,
+      imagens,
+      numeroCartao,
+      nomeCartao,
+      validadeCartao,
+      cvv,
+      telefone,
+      email,
+      data_inicio_assinatura,
+      data_fim_assinatura,
+      status_assinatura
     } = req.body;
 
-    // Validações
-    if (!nome || !setor || !cnpj || !email) {
+    // Validações obrigatórias
+    if (!cnae || !setor || !estado || !cidade || !email || !telefone) {
       return res.status(400).json({
         sucesso: false,
-        mensagem: 'Nome, setor, CNPJ e email são obrigatórios'
+        mensagem: 'CNAE, setor, estado, cidade, email e telefone são obrigatórios'
       });
     }
 
-    if (!validarCNPJ(cnpj)) {
-      return res.status(400).json({
-        sucesso: false,
-        mensagem: 'CNPJ inválido'
-      });
+    // Processar dados do cartão - POR SEGURANÇA, NÃO ARMAZENAR DADOS COMPLETOS
+    // Armazenar apenas últimos 4 dígitos para referência
+    let ultimos4Digitos = null;
+    if (numeroCartao) {
+      const apenasNumeros = numeroCartao.replace(/\D/g, '');
+      ultimos4Digitos = apenasNumeros.slice(-4);
     }
 
-    const cnpjLimpo = cnpj.replace(/[^\d]/g, '');
-
-    // Verificar se CNPJ já existe
-    const empresaExistente = await pool.query(
-      'SELECT id FROM empresas WHERE cnpj = $1',
-      [cnpjLimpo]
-    );
-
-    if (empresaExistente.rows.length > 0) {
-      return res.status(409).json({
-        sucesso: false,
-        mensagem: 'CNPJ já cadastrado'
-      });
-    }
-
-    // Upload da imagem (se enviada)
-    let imagemUrl = null;
-    if (req.file) {
-      try {
-        imagemUrl = await uploadImagemSupabase(req.file);
-      } catch (erroUpload) {
-        return res.status(500).json({
-          sucesso: false,
-          mensagem: 'Erro ao fazer upload da imagem',
-          erro: erroUpload.message
-        });
-      }
-    }
+    // Converter destaques para JSON
+    const destaquesJson = Array.isArray(destaques) ? JSON.stringify(destaques) : null;
+    
+    // Converter imagens para JSON
+    const imagensJson = Array.isArray(imagens) ? JSON.stringify(imagens) : JSON.stringify([]);
 
     // Inserir empresa
     const query = `
       INSERT INTO empresas (
-        nome, setor, cnpj, razao_social, email, telefone, 
-        localizacao, info, lucro, valor, faturamento, tipo,
-        ano_fundacao, funcionarios, tipo_imovel, dif, img, ativo,
+        cnae, setor, estado, cidade, faturamento_anual, margem_lucro,
+        preco_venda, ano_fundacao, numero_funcionarios, tipo_imovel,
+        destaques, imagens, ultimos_4_digitos_cartao, nome_cartao,
+        validade_cartao, telefone, email, ativo,
         data_inicio_assinatura, data_fim_assinatura, status_assinatura
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
@@ -357,23 +355,23 @@ router.post('/', autenticar, upload.single('imagem'), async (req, res) => {
     `;
 
     const resultado = await pool.query(query, [
-      nome,
+      cnae,
       setor,
-      cnpjLimpo,
-      razao_social || null,
+      estado,
+      cidade,
+      faturamentoAnual || null,
+      margemLucro || null,
+      precoVenda || null,
+      anoFundacao || null,
+      numeroFuncionarios || null,
+      tipoImovel || null,
+      destaquesJson,
+      imagensJson,
+      ultimos4Digitos,
+      nomeCartao || null,
+      validadeCartao || null,
+      telefone,
       email,
-      telefone || null,
-      localizacao || null,
-      info || null,
-      lucro || null,
-      valor || null,
-      faturamento || null,
-      tipo || null,
-      ano_fundacao || null,
-      funcionarios || null,
-      tipo_imovel || null,
-      dif || null,
-      imagemUrl,
       true,
       data_inicio_assinatura || null,
       data_fim_assinatura || null,
@@ -383,8 +381,7 @@ router.post('/', autenticar, upload.single('imagem'), async (req, res) => {
     res.status(201).json({
       sucesso: true,
       mensagem: 'Empresa criada com sucesso',
-      id: resultado.rows[0].id,
-      imagem_url: imagemUrl
+      id: resultado.rows[0].id
     });
 
   } catch (erro) {
@@ -427,19 +424,27 @@ router.post('/', autenticar, upload.single('imagem'), async (req, res) => {
 router.get('/', autenticar, async (req, res) => {
   try {
     const query = `
-      SELECT id, nome, setor, cnpj, razao_social, email, telefone, 
-             localizacao, info, lucro, valor, faturamento, tipo,
-             ano_fundacao, funcionarios, tipo_imovel, dif, img, ativo,
+      SELECT id, cnae, setor, estado, cidade, faturamento_anual, margem_lucro,
+             preco_venda, ano_fundacao, numero_funcionarios, tipo_imovel,
+             destaques, imagens, ultimos_4_digitos_cartao, nome_cartao,
+             validade_cartao, telefone, email, ativo,
              data_inicio_assinatura, data_fim_assinatura, status_assinatura
       FROM empresas
-      ORDER BY nome ASC
+      ORDER BY id DESC
     `;
 
     const resultado = await pool.query(query);
 
+    // Parsear JSON dos campos destaques e imagens
+    const dadosFormatados = resultado.rows.map(empresa => ({
+      ...empresa,
+      destaques: empresa.destaques ? JSON.parse(empresa.destaques) : [],
+      imagens: empresa.imagens ? JSON.parse(empresa.imagens) : []
+    }));
+
     res.json({
       sucesso: true,
-      dados: resultado.rows
+      dados: dadosFormatados
     });
 
   } catch (erro) {
@@ -499,9 +504,15 @@ router.get('/:id', autenticar, async (req, res) => {
       });
     }
 
+    const empresa = resultado.rows[0];
+    
+    // Parsear JSON
+    empresa.destaques = empresa.destaques ? JSON.parse(empresa.destaques) : [];
+    empresa.imagens = empresa.imagens ? JSON.parse(empresa.imagens) : [];
+
     res.json({
       sucesso: true,
-      dados: resultado.rows[0]
+      dados: empresa
     });
 
   } catch (erro) {
@@ -517,12 +528,7 @@ router.get('/:id', autenticar, async (req, res) => {
  * @swagger
  * /api/empresas/{id}:
  *   put:
- *     summary: Atualizar empresa (use Postman/Insomnia para enviar com imagem)
- *     description: |
- *       ⚠️ **UPLOAD DE IMAGENS**: Esta rota aceita multipart/form-data para upload de imagens.
- *       Para testar com imagem, use Postman, Insomnia ou Thunder Client.
- *       
- *       No Swagger você pode atualizar empresas sem modificar a imagem usando JSON.
+ *     summary: Atualizar empresa
  *     tags: [Empresas]
  *     security:
  *       - bearerAuth: []
@@ -540,70 +546,52 @@ router.get('/:id', autenticar, async (req, res) => {
  *           schema:
  *             type: object
  *             properties:
- *               nome:
+ *               cnae:
  *                 type: string
  *               setor:
  *                 type: string
- *               razao_social:
+ *               estado:
  *                 type: string
- *               email:
+ *               cidade:
  *                 type: string
- *                 format: email
+ *               faturamentoAnual:
+ *                 type: string
+ *               margemLucro:
+ *                 type: string
+ *               precoVenda:
+ *                 type: string
+ *               anoFundacao:
+ *                 type: string
+ *               numeroFuncionarios:
+ *                 type: string
+ *               tipoImovel:
+ *                 type: string
+ *               destaques:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               imagens:
+ *                 type: array
+ *                 items:
+ *                   type: string
  *               telefone:
  *                 type: string
- *               localizacao:
- *                 type: string
- *               info:
- *                 type: string
- *               lucro:
- *                 type: number
- *                 format: float
- *               valor:
- *                 type: number
- *                 format: float
- *               faturamento:
- *                 type: number
- *                 format: float
- *               tipo:
- *                 type: string
- *               ano_fundacao:
- *                 type: integer
- *               funcionarios:
- *                 type: integer
- *               tipo_imovel:
- *                 type: string
- *               dif:
+ *               email:
  *                 type: string
  *               ativo:
  *                 type: boolean
  *               data_inicio_assinatura:
  *                 type: string
  *                 format: date
- *                 example: "2024-01-01"
- *                 description: Data de início da assinatura (formato YYYY-MM-DD)
  *               data_fim_assinatura:
  *                 type: string
  *                 format: date
- *                 example: "2025-01-01"
- *                 description: Data de término da assinatura (formato YYYY-MM-DD)
  *               status_assinatura:
  *                 type: string
  *                 enum: [ativa, expirando, expirada, cancelada]
- *                 description: Status da assinatura
  *     responses:
  *       200:
  *         description: Empresa atualizada com sucesso
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 sucesso:
- *                   type: boolean
- *                 mensagem:
- *                   type: string
- *                 imagem_url:
- *                   type: string
  *       404:
  *         description: Empresa não encontrada
  *       401:
@@ -611,19 +599,33 @@ router.get('/:id', autenticar, async (req, res) => {
  *       500:
  *         description: Erro interno do servidor
  */
-router.put('/:id', autenticar, upload.single('imagem'), async (req, res) => {
+router.put('/:id', autenticar, async (req, res) => {
   try {
     const { id } = req.params;
     const { 
-      nome, setor, razao_social, email, telefone, 
-      localizacao, info, lucro, valor, faturamento, tipo,
-      ano_fundacao, funcionarios, tipo_imovel, dif, ativo,
-      data_inicio_assinatura, data_fim_assinatura, status_assinatura
+      cnae,
+      setor,
+      estado,
+      cidade,
+      faturamentoAnual,
+      margemLucro,
+      precoVenda,
+      anoFundacao,
+      numeroFuncionarios,
+      tipoImovel,
+      destaques,
+      imagens,
+      telefone,
+      email,
+      ativo,
+      data_inicio_assinatura,
+      data_fim_assinatura,
+      status_assinatura
     } = req.body;
 
-    // Verificar se empresa existe e pegar imagem antiga
+    // Verificar se empresa existe
     const empresaExistente = await pool.query(
-      'SELECT img FROM empresas WHERE id = $1',
+      'SELECT id FROM empresas WHERE id = $1',
       [id]
     );
 
@@ -634,54 +636,36 @@ router.put('/:id', autenticar, upload.single('imagem'), async (req, res) => {
       });
     }
 
-    let imagemUrl = empresaExistente.rows[0].img;
-
-    // Se enviou nova imagem, fazer upload e deletar a antiga
-    if (req.file) {
-      try {
-        // Deletar imagem antiga
-        if (imagemUrl) {
-          await deletarImagemSupabase(imagemUrl);
-        }
-        
-        // Upload da nova imagem
-        imagemUrl = await uploadImagemSupabase(req.file);
-      } catch (erroUpload) {
-        return res.status(500).json({
-          sucesso: false,
-          mensagem: 'Erro ao processar imagem',
-          erro: erroUpload.message
-        });
-      }
-    }
+    // Converter arrays para JSON
+    const destaquesJson = Array.isArray(destaques) ? JSON.stringify(destaques) : null;
+    const imagensJson = Array.isArray(imagens) ? JSON.stringify(imagens) : null;
 
     const query = `
       UPDATE empresas
-      SET nome = $1, setor = $2, razao_social = $3, email = $4, 
-          telefone = $5, localizacao = $6, info = $7, lucro = $8, valor = $9, 
-          faturamento = $10, tipo = $11, ano_fundacao = $12, 
-          funcionarios = $13, tipo_imovel = $14, dif = $15, img = $16, ativo = $17,
-          data_inicio_assinatura = $18, data_fim_assinatura = $19, status_assinatura = $20
-      WHERE id = $21
+      SET cnae = $1, setor = $2, estado = $3, cidade = $4,
+          faturamento_anual = $5, margem_lucro = $6, preco_venda = $7,
+          ano_fundacao = $8, numero_funcionarios = $9, tipo_imovel = $10,
+          destaques = $11, imagens = $12, telefone = $13, email = $14,
+          ativo = $15, data_inicio_assinatura = $16, data_fim_assinatura = $17,
+          status_assinatura = $18
+      WHERE id = $19
     `;
 
     await pool.query(query, [
-      nome,
+      cnae,
       setor,
-      razao_social,
-      email,
+      estado,
+      cidade,
+      faturamentoAnual,
+      margemLucro,
+      precoVenda,
+      anoFundacao,
+      numeroFuncionarios,
+      tipoImovel,
+      destaquesJson,
+      imagensJson,
       telefone,
-      localizacao,
-      info,
-      lucro,
-      valor,
-      faturamento,
-      tipo,
-      ano_fundacao,
-      funcionarios,
-      tipo_imovel,
-      dif,
-      imagemUrl,
+      email,
       ativo !== undefined ? ativo : true,
       data_inicio_assinatura || null,
       data_fim_assinatura || null,
@@ -691,8 +675,7 @@ router.put('/:id', autenticar, upload.single('imagem'), async (req, res) => {
 
     res.json({
       sucesso: true,
-      mensagem: 'Empresa atualizada com sucesso',
-      imagem_url: imagemUrl
+      mensagem: 'Empresa atualizada com sucesso'
     });
 
   } catch (erro) {
@@ -708,7 +691,7 @@ router.put('/:id', autenticar, upload.single('imagem'), async (req, res) => {
  * @swagger
  * /api/empresas/{id}:
  *   delete:
- *     summary: Deletar empresa e sua imagem
+ *     summary: Deletar empresa
  *     tags: [Empresas]
  *     security:
  *       - bearerAuth: []
@@ -722,15 +705,6 @@ router.put('/:id', autenticar, upload.single('imagem'), async (req, res) => {
  *     responses:
  *       200:
  *         description: Empresa deletada com sucesso
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 sucesso:
- *                   type: boolean
- *                 mensagem:
- *                   type: string
  *       404:
  *         description: Empresa não encontrada
  *       401:
@@ -742,9 +716,9 @@ router.delete('/:id', autenticar, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Buscar imagem antes de deletar
+    // Verificar se empresa existe
     const empresa = await pool.query(
-      'SELECT img FROM empresas WHERE id = $1',
+      'SELECT id FROM empresas WHERE id = $1',
       [id]
     );
 
@@ -753,11 +727,6 @@ router.delete('/:id', autenticar, async (req, res) => {
         sucesso: false,
         mensagem: 'Empresa não encontrada'
       });
-    }
-
-    // Deletar imagem do Supabase Storage
-    if (empresa.rows[0].img) {
-      await deletarImagemSupabase(empresa.rows[0].img);
     }
 
     // Deletar empresa do banco
