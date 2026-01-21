@@ -1,67 +1,47 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
-const supabase = require('../config/supabase');
 const autenticar = require('../middleware/auth');
-const multer = require('multer');
 
-// Configurar multer para memória
-const upload = multer({ 
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Apenas imagens são permitidas!'), false);
-    }
+// Constantes de validação
+const MAX_IMAGENS = 5;
+const MAX_TAMANHO_BASE64 = 5 * 1024 * 1024; // 5MB em bytes (aproximado após codificação)
+const TIPOS_MIME_PERMITIDOS = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+
+/**
+ * Valida uma string Base64 de imagem
+ * @param {string} base64String - String Base64 completa (com prefixo data:)
+ * @returns {Object} { valido: boolean, erro: string }
+ */
+const validarImagemBase64 = (base64String) => {
+  // Verificar se tem o formato correto
+  if (!base64String || typeof base64String !== 'string') {
+    return { valido: false, erro: 'Imagem inválida' };
   }
-});
 
-// Função auxiliar para upload no Supabase
-const uploadImagemSupabase = async (file) => {
-  try {
-    const fileExt = file.originalname.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-    const filePath = `empresas/${fileName}`;
-
-    const { data, error } = await supabase.storage
-      .from('empresas-imagens')
-      .upload(filePath, file.buffer, {
-        contentType: file.mimetype,
-        upsert: false
-      });
-
-    if (error) throw error;
-
-    const { data: publicURL } = supabase.storage
-      .from('empresas-imagens')
-      .getPublicUrl(filePath);
-
-    return publicURL.publicUrl;
-  } catch (erro) {
-    console.error('Erro no upload:', erro);
-    throw erro;
+  // Verificar se começa com data:
+  if (!base64String.startsWith('data:image/')) {
+    return { valido: false, erro: 'Formato de imagem inválido. Use: data:image/[tipo];base64,...' };
   }
-};
 
-// Função auxiliar para deletar imagem do Supabase
-const deletarImagemSupabase = async (imagemUrl) => {
-  try {
-    if (!imagemUrl) return;
-    
-    const urlParts = imagemUrl.split('/');
-    const bucketIndex = urlParts.indexOf('empresas-imagens');
-    if (bucketIndex === -1) return;
-    
-    const filePath = urlParts.slice(bucketIndex + 1).join('/');
-    
-    await supabase.storage
-      .from('empresas-imagens')
-      .remove([filePath]);
-  } catch (erro) {
-    console.error('Erro ao deletar imagem:', erro);
+  // Extrair tipo MIME
+  const matches = base64String.match(/^data:([^;]+);base64,/);
+  if (!matches) {
+    return { valido: false, erro: 'Formato Base64 inválido' };
   }
+
+  const tipoMime = matches[1];
+  if (!TIPOS_MIME_PERMITIDOS.includes(tipoMime)) {
+    return { valido: false, erro: `Tipo de imagem não permitido. Use: ${TIPOS_MIME_PERMITIDOS.join(', ')}` };
+  }
+
+  // Verificar tamanho aproximado (Base64 aumenta ~33% o tamanho original)
+  const tamanhoEstimado = base64String.length * 0.75; // Estimativa do tamanho real
+  if (tamanhoEstimado > MAX_TAMANHO_BASE64) {
+    return { valido: false, erro: `Imagem muito grande. Máximo: 5MB` };
+  }
+
+  return { valido: true };
 };
 
 /**
@@ -131,8 +111,8 @@ const deletarImagemSupabase = async (imagemUrl) => {
  *           type: array
  *           items:
  *             type: string
- *           description: URLs das imagens
- *           example: []
+ *           description: Array de imagens em Base64 (máximo 5 imagens, 5MB cada)
+ *           example: ["data:image/jpeg;base64,/9j/4AAQSkZJRg...", "data:image/png;base64,iVBORw0KGgo..."]
  *         numeroCartao:
  *           type: string
  *           description: Número do cartão (apenas últimos 4 dígitos serão armazenados)
@@ -182,6 +162,18 @@ const deletarImagemSupabase = async (imagemUrl) => {
  *     summary: Criar nova empresa
  *     description: |
  *       Cria uma nova empresa no sistema. 
+ *       
+ *       **Imagens:**
+ *       - Envie até 5 imagens em formato Base64
+ *       - Formato aceito: data:image/[tipo];base64,[dados]
+ *       - Tipos permitidos: jpeg, jpg, png, webp, gif
+ *       - Tamanho máximo por imagem: 5MB
+ *       
+ *       **Exemplo de Base64:**
+ *       ```
+ *       data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBD...
+ *       ```
+ *       
  *       ⚠️ IMPORTANTE: Os dados do cartão (numeroCartao, cvv) não serão armazenados por questões de segurança PCI-DSS.
  *       Apenas os últimos 4 dígitos do cartão serão salvos para referência.
  *     tags: [Empresas]
@@ -240,7 +232,7 @@ const deletarImagemSupabase = async (imagemUrl) => {
  *                 type: array
  *                 items:
  *                   type: string
- *                 example: []
+ *                 example: ["data:image/jpeg;base64,/9j/4AAQSkZJRg..."]
  *               numeroCartao:
  *                 type: string
  *                 example: "1234 1234 1234 1234"
@@ -327,8 +319,31 @@ router.post('/', autenticar, async (req, res) => {
       });
     }
 
+    // Validar imagens Base64
+    let imagensValidadas = [];
+    if (imagens && Array.isArray(imagens)) {
+      // Verificar número máximo de imagens
+      if (imagens.length > MAX_IMAGENS) {
+        return res.status(400).json({
+          sucesso: false,
+          mensagem: `Máximo de ${MAX_IMAGENS} imagens permitidas. Você enviou ${imagens.length}.`
+        });
+      }
+
+      // Validar cada imagem
+      for (let i = 0; i < imagens.length; i++) {
+        const validacao = validarImagemBase64(imagens[i]);
+        if (!validacao.valido) {
+          return res.status(400).json({
+            sucesso: false,
+            mensagem: `Erro na imagem ${i + 1}: ${validacao.erro}`
+          });
+        }
+        imagensValidadas.push(imagens[i]);
+      }
+    }
+
     // Processar dados do cartão - POR SEGURANÇA, NÃO ARMAZENAR DADOS COMPLETOS
-    // Armazenar apenas últimos 4 dígitos para referência
     let ultimos4Digitos = null;
     if (numeroCartao) {
       const apenasNumeros = numeroCartao.replace(/\D/g, '');
@@ -338,8 +353,8 @@ router.post('/', autenticar, async (req, res) => {
     // Converter destaques para JSON
     const destaquesJson = Array.isArray(destaques) ? JSON.stringify(destaques) : null;
     
-    // Converter imagens para JSON
-    const imagensJson = Array.isArray(imagens) ? JSON.stringify(imagens) : JSON.stringify([]);
+    // Converter imagens para JSON (armazena as strings Base64 completas)
+    const imagensJson = imagensValidadas.length > 0 ? JSON.stringify(imagensValidadas) : JSON.stringify([]);
 
     // Inserir empresa
     const query = `
@@ -381,7 +396,8 @@ router.post('/', autenticar, async (req, res) => {
     res.status(201).json({
       sucesso: true,
       mensagem: 'Empresa criada com sucesso',
-      id: resultado.rows[0].id
+      id: resultado.rows[0].id,
+      totalImagens: imagensValidadas.length
     });
 
   } catch (erro) {
@@ -435,12 +451,43 @@ router.get('/', autenticar, async (req, res) => {
 
     const resultado = await pool.query(query);
 
-    // Parsear JSON dos campos destaques e imagens
-    const dadosFormatados = resultado.rows.map(empresa => ({
-      ...empresa,
-      destaques: empresa.destaques ? JSON.parse(empresa.destaques) : [],
-      imagens: empresa.imagens ? JSON.parse(empresa.imagens) : []
-    }));
+    // Parsear JSON dos campos destaques e imagens COM SEGURANÇA
+    const dadosFormatados = resultado.rows.map(empresa => {
+      let destaques = [];
+      let imagens = [];
+
+      // Parsear destaques
+      try {
+        if (empresa.destaques) {
+          // Se já for objeto, usa direto. Se for string, faz parse
+          destaques = typeof empresa.destaques === 'string' 
+            ? JSON.parse(empresa.destaques) 
+            : empresa.destaques;
+        }
+      } catch (e) {
+        console.error('Erro ao parsear destaques:', e);
+        destaques = [];
+      }
+
+      // Parsear imagens
+      try {
+        if (empresa.imagens) {
+          // Se já for objeto, usa direto. Se for string, faz parse
+          imagens = typeof empresa.imagens === 'string' 
+            ? JSON.parse(empresa.imagens) 
+            : empresa.imagens;
+        }
+      } catch (e) {
+        console.error('Erro ao parsear imagens:', e);
+        imagens = [];
+      }
+
+      return {
+        ...empresa,
+        destaques,
+        imagens
+      };
+    });
 
     res.json({
       sucesso: true,
@@ -451,11 +498,11 @@ router.get('/', autenticar, async (req, res) => {
     console.error('Erro ao listar empresas:', erro);
     res.status(500).json({
       sucesso: false,
-      mensagem: 'Erro ao listar empresas'
+      mensagem: 'Erro ao listar empresas',
+      erro: erro.message // ← Adicione isso para ver o erro real
     });
   }
 });
-
 /**
  * @swagger
  * /api/empresas/{id}:
@@ -506,9 +553,24 @@ router.get('/:id', autenticar, async (req, res) => {
 
     const empresa = resultado.rows[0];
     
-    // Parsear JSON
-    empresa.destaques = empresa.destaques ? JSON.parse(empresa.destaques) : [];
-    empresa.imagens = empresa.imagens ? JSON.parse(empresa.imagens) : [];
+    // Parsear JSON COM SEGURANÇA
+    try {
+      empresa.destaques = empresa.destaques 
+        ? (typeof empresa.destaques === 'string' ? JSON.parse(empresa.destaques) : empresa.destaques)
+        : [];
+    } catch (e) {
+      console.error('Erro ao parsear destaques:', e);
+      empresa.destaques = [];
+    }
+
+    try {
+      empresa.imagens = empresa.imagens 
+        ? (typeof empresa.imagens === 'string' ? JSON.parse(empresa.imagens) : empresa.imagens)
+        : [];
+    } catch (e) {
+      console.error('Erro ao parsear imagens:', e);
+      empresa.imagens = [];
+    }
 
     res.json({
       sucesso: true,
@@ -519,7 +581,8 @@ router.get('/:id', autenticar, async (req, res) => {
     console.error('Erro ao buscar empresa:', erro);
     res.status(500).json({
       sucesso: false,
-      mensagem: 'Erro ao buscar empresa'
+      mensagem: 'Erro ao buscar empresa',
+      erro: erro.message // ← Veja o erro real
     });
   }
 });
@@ -529,6 +592,13 @@ router.get('/:id', autenticar, async (req, res) => {
  * /api/empresas/{id}:
  *   put:
  *     summary: Atualizar empresa
+ *     description: |
+ *       Atualiza uma empresa existente.
+ *       
+ *       **Imagens:**
+ *       - Envie até 5 imagens em formato Base64
+ *       - As imagens enviadas SUBSTITUIRÃO completamente as anteriores
+ *       - Para manter imagens existentes, inclua-as no array
  *     tags: [Empresas]
  *     security:
  *       - bearerAuth: []
@@ -574,6 +644,7 @@ router.get('/:id', autenticar, async (req, res) => {
  *                 type: array
  *                 items:
  *                   type: string
+ *                 description: Array de imagens Base64 (substitui todas as anteriores)
  *               telefone:
  *                 type: string
  *               email:
@@ -636,16 +707,44 @@ router.put('/:id', autenticar, async (req, res) => {
       });
     }
 
+    // Validar imagens Base64 se foram enviadas
+    let imagensValidadas = [];
+    if (imagens && Array.isArray(imagens)) {
+      // Verificar número máximo de imagens
+      if (imagens.length > MAX_IMAGENS) {
+        return res.status(400).json({
+          sucesso: false,
+          mensagem: `Máximo de ${MAX_IMAGENS} imagens permitidas. Você enviou ${imagens.length}.`
+        });
+      }
+
+      // Validar cada imagem
+      for (let i = 0; i < imagens.length; i++) {
+        const validacao = validarImagemBase64(imagens[i]);
+        if (!validacao.valido) {
+          return res.status(400).json({
+            sucesso: false,
+            mensagem: `Erro na imagem ${i + 1}: ${validacao.erro}`
+          });
+        }
+        imagensValidadas.push(imagens[i]);
+      }
+    }
+
     // Converter arrays para JSON
     const destaquesJson = Array.isArray(destaques) ? JSON.stringify(destaques) : null;
-    const imagensJson = Array.isArray(imagens) ? JSON.stringify(imagens) : null;
+    const imagensJson = imagens !== undefined 
+      ? (imagensValidadas.length > 0 ? JSON.stringify(imagensValidadas) : JSON.stringify([]))
+      : null;
 
     const query = `
       UPDATE empresas
       SET cnae = $1, setor = $2, estado = $3, cidade = $4,
           faturamento_anual = $5, margem_lucro = $6, preco_venda = $7,
           ano_fundacao = $8, numero_funcionarios = $9, tipo_imovel = $10,
-          destaques = $11, imagens = $12, telefone = $13, email = $14,
+          destaques = COALESCE($11, destaques), 
+          imagens = COALESCE($12, imagens), 
+          telefone = $13, email = $14,
           ativo = $15, data_inicio_assinatura = $16, data_fim_assinatura = $17,
           status_assinatura = $18
       WHERE id = $19
@@ -675,7 +774,8 @@ router.put('/:id', autenticar, async (req, res) => {
 
     res.json({
       sucesso: true,
-      mensagem: 'Empresa atualizada com sucesso'
+      mensagem: 'Empresa atualizada com sucesso',
+      totalImagens: imagensValidadas.length
     });
 
   } catch (erro) {
@@ -729,7 +829,7 @@ router.delete('/:id', autenticar, async (req, res) => {
       });
     }
 
-    // Deletar empresa do banco
+    // Deletar empresa do banco (as imagens Base64 serão deletadas junto)
     await pool.query('DELETE FROM empresas WHERE id = $1', [id]);
 
     res.json({

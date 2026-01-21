@@ -7,6 +7,8 @@ const { iniciarCronJob } = require('./jobs/verificarAssinaturas')
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.use(express.json({ limit: '50mb' })); // Para aceitar JSONs grandes (imagens Base64)
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // CORS - Permissivo para testes
 const corsOptions = {
