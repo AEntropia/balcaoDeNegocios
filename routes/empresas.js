@@ -5,7 +5,7 @@ const autenticar = require('../middleware/auth');
 
 // Constantes de validação
 const MAX_IMAGENS = 5;
-const MAX_TAMANHO_BASE64 = 5 * 1024 * 1024; // 5MB em bytes (aproximado após codificação)
+const MAX_TAMANHO_BASE64 = 25 * 1024 * 1024; // 5MB em bytes (aproximado após codificação)
 const TIPOS_MIME_PERMITIDOS = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 
 /**
