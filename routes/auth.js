@@ -1,4 +1,3 @@
-//routes/auth.js
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
@@ -300,9 +299,154 @@ router.get('/perfil', autenticar, async (req, res) => {
 });
 
 /**
- * @route   PUT /api/auth/alterar-senha
- * @desc    Alterar senha do usuário logado
- * @access  Private
+ * @swagger
+ * /api/auth/perfil:
+ *   put:
+ *     summary: Atualizar perfil do usuário logado
+ *     tags: [Autenticação]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nome:
+ *                 type: string
+ *                 example: João Silva Santos
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: joao.novo@exemplo.com
+ *     responses:
+ *       200:
+ *         description: Perfil atualizado com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       409:
+ *         description: Email já cadastrado por outro usuário
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ */
+router.put('/perfil', autenticar, async (req, res) => {
+  try {
+    const { nome, email } = req.body;
+
+    // Validações
+    if (!nome && !email) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Informe pelo menos um campo para atualizar'
+      });
+    }
+
+    // Validar formato de email se fornecido
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          sucesso: false,
+          mensagem: 'Email inválido'
+        });
+      }
+
+      // Verificar se email já existe para outro usuário
+      const emailExistente = await pool.query(
+        'SELECT id FROM usuarios WHERE email = $1 AND id != $2',
+        [email, req.usuario.id]
+      );
+
+      if (emailExistente.rows.length > 0) {
+        return res.status(409).json({
+          sucesso: false,
+          mensagem: 'Email já cadastrado por outro usuário'
+        });
+      }
+    }
+
+    // Montar query dinâmica
+    const camposAtualizacao = [];
+    const valores = [];
+    let contador = 1;
+
+    if (nome) {
+      camposAtualizacao.push(`nome = $${contador}`);
+      valores.push(nome);
+      contador++;
+    }
+
+    if (email) {
+      camposAtualizacao.push(`email = $${contador}`);
+      valores.push(email);
+      contador++;
+    }
+
+    valores.push(req.usuario.id);
+
+    const query = `
+      UPDATE usuarios 
+      SET ${camposAtualizacao.join(', ')}
+      WHERE id = $${contador}
+      RETURNING id, nome, email, ativo
+    `;
+
+    const resultado = await pool.query(query, valores);
+
+    res.json({
+      sucesso: true,
+      mensagem: 'Perfil atualizado com sucesso',
+      dados: resultado.rows[0]
+    });
+
+  } catch (erro) {
+    console.error('Erro ao atualizar perfil:', erro);
+    res.status(500).json({
+      sucesso: false,
+      mensagem: 'Erro ao atualizar perfil'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/alterar-senha:
+ *   put:
+ *     summary: Alterar senha do usuário logado
+ *     tags: [Autenticação]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - senhaAtual
+ *               - novaSenha
+ *               - confirmarNovaSenha
+ *             properties:
+ *               senhaAtual:
+ *                 type: string
+ *                 format: password
+ *                 example: senha123
+ *               novaSenha:
+ *                 type: string
+ *                 format: password
+ *                 example: novaSenha456
+ *               confirmarNovaSenha:
+ *                 type: string
+ *                 format: password
+ *                 example: novaSenha456
+ *     responses:
+ *       200:
+ *         description: Senha alterada com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Senha atual incorreta
  */
 router.put('/alterar-senha', autenticar, async (req, res) => {
   try {
@@ -378,9 +522,20 @@ router.put('/alterar-senha', autenticar, async (req, res) => {
 });
 
 /**
- * @route   POST /api/auth/verificar-token
- * @desc    Verificar se token é válido
- * @access  Public
+ * @swagger
+ * /api/auth/verificar-token:
+ *   post:
+ *     summary: Verificar se token é válido
+ *     tags: [Autenticação]
+ *     requestBody:
+ *       required: false
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Token válido
+ *       401:
+ *         description: Token inválido ou expirado
  */
 router.post('/verificar-token', (req, res) => {
   try {
@@ -414,19 +569,72 @@ router.post('/verificar-token', (req, res) => {
 });
 
 /**
- * @route   GET /api/auth/usuarios
- * @desc    Listar todos os usuários
- * @access  Private
+ * @swagger
+ * /api/auth/usuarios:
+ *   get:
+ *     summary: Listar todos os usuários
+ *     tags: [Autenticação]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: busca
+ *         schema:
+ *           type: string
+ *         description: Buscar por nome ou email
+ *       - in: query
+ *         name: ativo
+ *         schema:
+ *           type: boolean
+ *         description: Filtrar por status ativo
+ *     responses:
+ *       200:
+ *         description: Lista de usuários retornada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sucesso:
+ *                   type: boolean
+ *                 total:
+ *                   type: integer
+ *                 dados:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Usuario'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
  */
 router.get('/usuarios', autenticar, async (req, res) => {
   try {
-    const query = `
+    const { busca, ativo } = req.query;
+
+    let query = `
       SELECT id, nome, email, ativo
       FROM usuarios
-      ORDER BY nome ASC
+      WHERE 1=1
     `;
+    const valores = [];
+    let contador = 1;
 
-    const resultado = await pool.query(query);
+    // Filtro de busca
+    if (busca) {
+      query += ` AND (nome ILIKE $${contador} OR email ILIKE $${contador})`;
+      valores.push(`%${busca}%`);
+      contador++;
+    }
+
+    // Filtro de status ativo
+    if (ativo !== undefined) {
+      query += ` AND ativo = $${contador}`;
+      valores.push(ativo === 'true');
+      contador++;
+    }
+
+    query += ' ORDER BY nome ASC';
+
+    const resultado = await pool.query(query, valores);
 
     res.json({
       sucesso: true,
@@ -443,5 +651,144 @@ router.get('/usuarios', autenticar, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/usuarios/{id}:
+ *   get:
+ *     summary: Obter usuário por ID
+ *     tags: [Autenticação]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do usuário
+ *     responses:
+ *       200:
+ *         description: Usuário retornado com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sucesso:
+ *                   type: boolean
+ *                 dados:
+ *                   $ref: '#/components/schemas/Usuario'
+ *       404:
+ *         description: Usuário não encontrado
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ */
+router.get('/usuarios/:id', autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const query = `
+      SELECT id, nome, email, ativo
+      FROM usuarios
+      WHERE id = $1
+    `;
+
+    const resultado = await pool.query(query, [id]);
+
+    if (resultado.rows.length === 0) {
+      return res.status(404).json({
+        sucesso: false,
+        mensagem: 'Usuário não encontrado'
+      });
+    }
+
+    res.json({
+      sucesso: true,
+      dados: resultado.rows[0]
+    });
+
+  } catch (erro) {
+    console.error('Erro ao buscar usuário:', erro);
+    res.status(500).json({
+      sucesso: false,
+      mensagem: 'Erro ao buscar usuário'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/usuarios/{id}:
+ *   delete:
+ *     summary: Deletar usuário
+ *     tags: [Autenticação]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do usuário
+ *     responses:
+ *       200:
+ *         description: Usuário deletado com sucesso
+ *       400:
+ *         description: Não é possível deletar o próprio usuário
+ *       404:
+ *         description: Usuário não encontrado
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ */
+router.delete('/usuarios/:id', autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verificar se está tentando deletar o administrador do sistema
+    if (parseInt(id) === -1) {
+      return res.status(403).json({
+        sucesso: false,
+        mensagem: 'O administrador do sistema não pode ser deletado'
+      });
+    }
+
+    // Verificar se usuário está tentando deletar a si mesmo
+    if (parseInt(id) === req.usuario.id) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Você não pode deletar seu próprio usuário'
+      });
+    }
+
+    // Verificar se usuário existe
+    const usuarioExiste = await pool.query(
+      'SELECT id FROM usuarios WHERE id = $1',
+      [id]
+    );
+
+    if (usuarioExiste.rows.length === 0) {
+      return res.status(404).json({
+        sucesso: false,
+        mensagem: 'Usuário não encontrado'
+      });
+    }
+
+    // Deletar usuário
+    await pool.query('DELETE FROM usuarios WHERE id = $1', [id]);
+
+    res.json({
+      sucesso: true,
+      mensagem: 'Usuário deletado com sucesso'
+    });
+
+  } catch (erro) {
+    console.error('Erro ao deletar usuário:', erro);
+    res.status(500).json({
+      sucesso: false,
+      mensagem: 'Erro ao deletar usuário'
+    });
+  }
+});
 
 module.exports = router;

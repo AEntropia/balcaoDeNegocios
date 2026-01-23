@@ -411,16 +411,54 @@ router.post('/', autenticar, async (req, res) => {
 });
 
 /**
+ * /**
  * @swagger
  * /api/empresas:
  *   get:
- *     summary: Listar todas as empresas
+ *     summary: Listar todas as empresas com paginação e filtros
  *     tags: [Empresas]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: pagina
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Número da página (começa em 1)
+ *       - in: query
+ *         name: cnae
+ *         schema:
+ *           type: string
+ *         description: Filtro por CNAE
+ *       - in: query
+ *         name: setor
+ *         schema:
+ *           type: string
+ *         description: Filtro por setor
+ *       - in: query
+ *         name: estado
+ *         schema:
+ *           type: string
+ *         description: Filtro por estado
+ *       - in: query
+ *         name: cidade
+ *         schema:
+ *           type: string
+ *         description: Filtro por cidade
+ *       - in: query
+ *         name: precoMin
+ *         schema:
+ *           type: number
+ *         description: Preço mínimo de venda
+ *       - in: query
+ *         name: precoMax
+ *         schema:
+ *           type: number
+ *         description: Preço máximo de venda
  *     responses:
  *       200:
- *         description: Lista de empresas
+ *         description: Lista de empresas paginada
  *         content:
  *           application/json:
  *             schema:
@@ -432,6 +470,17 @@ router.post('/', autenticar, async (req, res) => {
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/Empresa'
+ *                 paginacao:
+ *                   type: object
+ *                   properties:
+ *                     paginaAtual:
+ *                       type: integer
+ *                     itensPorPagina:
+ *                       type: integer
+ *                     totalItens:
+ *                       type: integer
+ *                     totalPaginas:
+ *                       type: integer
  *       401:
  *         description: Não autorizado
  *       500:
@@ -439,6 +488,71 @@ router.post('/', autenticar, async (req, res) => {
  */
 router.get('/', autenticar, async (req, res) => {
   try {
+    // Parâmetros de paginação
+    const pagina = parseInt(req.query.pagina) || 1;
+    const itensPorPagina = 10;
+    const offset = (pagina - 1) * itensPorPagina;
+
+    // Parâmetros de filtro
+    const { cnae, setor, estado, cidade, precoMin, precoMax } = req.query;
+
+    // Construir WHERE dinamicamente
+    const condicoes = [];
+    const valores = [];
+    let contadorParametro = 1;
+
+    if (cnae) {
+      condicoes.push(`cnae = $${contadorParametro}`);
+      valores.push(cnae);
+      contadorParametro++;
+    }
+
+    if (setor) {
+      condicoes.push(`setor ILIKE $${contadorParametro}`);
+      valores.push(`%${setor}%`);
+      contadorParametro++;
+    }
+
+    if (estado) {
+      condicoes.push(`estado = $${contadorParametro}`);
+      valores.push(estado);
+      contadorParametro++;
+    }
+
+    if (cidade) {
+      condicoes.push(`cidade ILIKE $${contadorParametro}`);
+      valores.push(`%${cidade}%`);
+      contadorParametro++;
+    }
+
+    if (precoMin) {
+      condicoes.push(`preco_venda >= $${contadorParametro}`);
+      valores.push(parseFloat(precoMin));
+      contadorParametro++;
+    }
+
+    if (precoMax) {
+      condicoes.push(`preco_venda <= $${contadorParametro}`);
+      valores.push(parseFloat(precoMax));
+      contadorParametro++;
+    }
+
+    const clausulaWhere = condicoes.length > 0 
+      ? `WHERE ${condicoes.join(' AND ')}` 
+      : '';
+
+    // Query para contar total de registros
+    const queryContagem = `
+      SELECT COUNT(*) as total
+      FROM empresas
+      ${clausulaWhere}
+    `;
+
+    const resultadoContagem = await pool.query(queryContagem, valores);
+    const totalItens = parseInt(resultadoContagem.rows[0].total);
+    const totalPaginas = Math.ceil(totalItens / itensPorPagina);
+
+    // Query principal com paginação
     const query = `
       SELECT id, cnae, setor, estado, cidade, faturamento_anual, margem_lucro,
              preco_venda, ano_fundacao, numero_funcionarios, tipo_imovel,
@@ -446,10 +560,14 @@ router.get('/', autenticar, async (req, res) => {
              validade_cartao, telefone, email, ativo,
              data_inicio_assinatura, data_fim_assinatura, status_assinatura
       FROM empresas
+      ${clausulaWhere}
       ORDER BY id DESC
+      LIMIT $${contadorParametro} OFFSET $${contadorParametro + 1}
     `;
 
-    const resultado = await pool.query(query);
+    valores.push(itensPorPagina, offset);
+
+    const resultado = await pool.query(query, valores);
 
     // Parsear JSON dos campos destaques e imagens COM SEGURANÇA
     const dadosFormatados = resultado.rows.map(empresa => {
@@ -459,7 +577,6 @@ router.get('/', autenticar, async (req, res) => {
       // Parsear destaques
       try {
         if (empresa.destaques) {
-          // Se já for objeto, usa direto. Se for string, faz parse
           destaques = typeof empresa.destaques === 'string' 
             ? JSON.parse(empresa.destaques) 
             : empresa.destaques;
@@ -472,7 +589,6 @@ router.get('/', autenticar, async (req, res) => {
       // Parsear imagens
       try {
         if (empresa.imagens) {
-          // Se já for objeto, usa direto. Se for string, faz parse
           imagens = typeof empresa.imagens === 'string' 
             ? JSON.parse(empresa.imagens) 
             : empresa.imagens;
@@ -491,7 +607,13 @@ router.get('/', autenticar, async (req, res) => {
 
     res.json({
       sucesso: true,
-      dados: dadosFormatados
+      dados: dadosFormatados,
+      paginacao: {
+        paginaAtual: pagina,
+        itensPorPagina,
+        totalItens,
+        totalPaginas
+      }
     });
 
   } catch (erro) {
@@ -499,7 +621,7 @@ router.get('/', autenticar, async (req, res) => {
     res.status(500).json({
       sucesso: false,
       mensagem: 'Erro ao listar empresas',
-      erro: erro.message // ← Adicione isso para ver o erro real
+      erro: erro.message
     });
   }
 });
@@ -842,6 +964,162 @@ router.delete('/:id', autenticar, async (req, res) => {
     res.status(500).json({
       sucesso: false,
       mensagem: 'Erro ao deletar empresa'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/empresas/{id}/status-assinatura:
+ *   patch:
+ *     summary: Alterar status da assinatura de um anúncio
+ *     tags: [Empresas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID da empresa
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [ativo, expirado, analise]
+ *                 description: Novo status da assinatura
+ *             example:
+ *               status: "ativo"
+ *     responses:
+ *       200:
+ *         description: Status alterado com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sucesso:
+ *                   type: boolean
+ *                 mensagem:
+ *                   type: string
+ *                 dados:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     status_assinatura:
+ *                       type: string
+ *                     data_atualizacao:
+ *                       type: string
+ *                       format: date-time
+ *             example:
+ *               sucesso: true
+ *               mensagem: "Status da assinatura alterado com sucesso"
+ *               dados:
+ *                 id: 123
+ *                 status_assinatura: "ativo"
+ *                 data_atualizacao: "2026-01-23T14:30:00.000Z"
+ *       400:
+ *         description: Status inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sucesso:
+ *                   type: boolean
+ *                 mensagem:
+ *                   type: string
+ *             example:
+ *               sucesso: false
+ *               mensagem: "Status inválido. Use: ativo, expirado ou analise"
+ *       404:
+ *         description: Empresa não encontrada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sucesso:
+ *                   type: boolean
+ *                 mensagem:
+ *                   type: string
+ *             example:
+ *               sucesso: false
+ *               mensagem: "Empresa não encontrada"
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.patch('/:id/status-assinatura', autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    // Validar status
+    const statusPermitidos = ['ativo', 'expirado', 'analise'];
+    
+    if (!status) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'O campo status é obrigatório'
+      });
+    }
+
+    if (!statusPermitidos.includes(status)) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Status inválido. Use: ativo, expirado ou analise'
+      });
+    }
+
+    // Verificar se a empresa existe
+    const queryVerificar = 'SELECT id FROM empresas WHERE id = $1';
+    const resultadoVerificar = await pool.query(queryVerificar, [id]);
+
+    if (resultadoVerificar.rows.length === 0) {
+      return res.status(404).json({
+        sucesso: false,
+        mensagem: 'Empresa não encontrada'
+      });
+    }
+
+    // Atualizar status
+    const queryAtualizar = `
+      UPDATE empresas 
+      SET status_assinatura = $1,
+          updated_at = NOW()
+      WHERE id = $2
+      RETURNING id, status_assinatura, updated_at
+    `;
+
+    const resultadoAtualizar = await pool.query(queryAtualizar, [status, id]);
+
+    res.json({
+      sucesso: true,
+      mensagem: 'Status da assinatura alterado com sucesso',
+      dados: {
+        id: resultadoAtualizar.rows[0].id,
+        status_assinatura: resultadoAtualizar.rows[0].status_assinatura,
+        data_atualizacao: resultadoAtualizar.rows[0].updated_at
+      }
+    });
+
+  } catch (erro) {
+    console.error('Erro ao alterar status da assinatura:', erro);
+    res.status(500).json({
+      sucesso: false,
+      mensagem: 'Erro ao alterar status da assinatura',
+      erro: erro.message
     });
   }
 });
