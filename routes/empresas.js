@@ -486,7 +486,7 @@ router.post('/', autenticar, async (req, res) => {
  *       500:
  *         description: Erro interno do servidor
  */
-router.get('/', autenticar, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     // Parâmetros de paginação
     const pagina = parseInt(req.query.pagina) || 1;
@@ -659,7 +659,7 @@ router.get('/', autenticar, async (req, res) => {
  *       500:
  *         description: Erro interno do servidor
  */
-router.get('/:id', autenticar, async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
