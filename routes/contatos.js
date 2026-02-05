@@ -2,6 +2,19 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
 const autenticar = require('../middleware/auth');
+const nodemailer = require('nodemailer');
+
+// Configuração do nodemailer (ajuste conforme sua configuração)
+// Se você já tem o transporter configurado em outro arquivo, importe-o
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
 
 // Validação de email
 const validarEmail = (email) => {
@@ -24,6 +37,8 @@ const validarTelefone = (telefone) => {
  *       required:
  *         - nome
  *         - email
+ *         - assunto
+ *         - mensagem
  *       properties:
  *         id:
  *           type: integer
@@ -38,13 +53,12 @@ const validarTelefone = (telefone) => {
  *         telefone:
  *           type: string
  *           description: Telefone do contato
- *         cidade:
+ *         assunto:
  *           type: string
- *           description: Cidade do contato
- *         tipo:
+ *           description: Assunto da mensagem
+ *         mensagem:
  *           type: string
- *           enum: [cliente, fornecedor, parceiro]
- *           description: Tipo do contato
+ *           description: Conteúdo da mensagem
  *         criado_em:
  *           type: string
  *           format: date-time
@@ -54,15 +68,15 @@ const validarTelefone = (telefone) => {
  *         nome: João Silva
  *         email: joao@exemplo.com
  *         telefone: (15) 99999-9999
- *         cidade: Sorocaba
- *         tipo: cliente
+ *         assunto: Solicitação de orçamento
+ *         mensagem: Gostaria de solicitar um orçamento para...
  */
 
 /**
  * @swagger
  * /api/contatos:
  *   post:
- *     summary: Criar novo contato (público)
+ *     summary: Criar novo contato e enviar email (público)
  *     tags: [Contatos]
  *     requestBody:
  *       required: true
@@ -73,6 +87,8 @@ const validarTelefone = (telefone) => {
  *             required:
  *               - nome
  *               - email
+ *               - assunto
+ *               - mensagem
  *             properties:
  *               nome:
  *                 type: string
@@ -84,16 +100,15 @@ const validarTelefone = (telefone) => {
  *               telefone:
  *                 type: string
  *                 example: (15) 99999-9999
- *               cidade:
+ *               assunto:
  *                 type: string
- *                 example: Sorocaba
- *               tipo:
+ *                 example: Solicitação de orçamento
+ *               mensagem:
  *                 type: string
- *                 enum: [cliente, fornecedor, parceiro]
- *                 example: cliente
+ *                 example: Gostaria de solicitar um orçamento para serviços de consultoria.
  *     responses:
  *       201:
- *         description: Contato criado com sucesso
+ *         description: Contato criado e email enviado com sucesso
  *         content:
  *           application/json:
  *             schema:
@@ -121,13 +136,13 @@ const validarTelefone = (telefone) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { nome, email, telefone, cidade, tipo } = req.body;
+    const { nome, email, telefone, assunto, mensagem } = req.body;
 
     // Validações
-    if (!nome || !email) {
+    if (!nome || !email || !assunto || !mensagem) {
       return res.status(400).json({
         sucesso: false,
-        mensagem: 'Nome e email são obrigatórios'
+        mensagem: 'Nome, email, assunto e mensagem são obrigatórios'
       });
     }
 
@@ -152,9 +167,23 @@ router.post('/', async (req, res) => {
       });
     }
 
+    if (assunto.length < 3 || assunto.length > 200) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Assunto deve ter entre 3 e 200 caracteres'
+      });
+    }
+
+    if (mensagem.length < 10 || mensagem.length > 5000) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Mensagem deve ter entre 10 e 5000 caracteres'
+      });
+    }
+
     // Inserir no banco de dados
     const query = `
-      INSERT INTO contatos (nome, email, telefone, cidade, tipo)
+      INSERT INTO contatos (nome, email, telefone, assunto, mensagem)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING id
     `;
@@ -163,14 +192,112 @@ router.post('/', async (req, res) => {
       nome,
       email,
       telefone || null,
-      cidade || null,
-      tipo || 'cliente'
+      assunto,
+      mensagem
     ]);
+
+    const contatoId = resultado.rows[0].id;
+
+    // Enviar email para o administrador
+    try {
+      const emailAdministrador = process.env.ADMIN_EMAIL || 'mateus287@outlook.com';
+      
+      const htmlEmail = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background-color: #1e293b; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+            .content { background-color: #f8f9fa; padding: 20px; border: 1px solid #dee2e6; }
+            .field { margin-bottom: 15px; }
+            .field-label { font-weight: bold; color: #1e293b; }
+            .field-value { margin-top: 5px; padding: 10px; background-color: white; border-radius: 3px; }
+            .message-box { background-color: white; padding: 15px; border-left: 4px solid #1e293b; margin-top: 10px; }
+            .footer { background-color: #e9ecef; padding: 15px; text-align: center; font-size: 12px; color: #6c757d; border-radius: 0 0 5px 5px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h2>📧 Novo Contato Recebido</h2>
+            </div>
+            <div class="content">
+              <p>Um novo contato foi registrado através do formulário do site.</p>
+              
+              <div class="field">
+                <div class="field-label">Nome:</div>
+                <div class="field-value">${nome}</div>
+              </div>
+              
+              <div class="field">
+                <div class="field-label">Email:</div>
+                <div class="field-value"><a href="mailto:${email}">${email}</a></div>
+              </div>
+              
+              ${telefone ? `
+                <div class="field">
+                  <div class="field-label">Telefone:</div>
+                  <div class="field-value">${telefone}</div>
+                </div>
+              ` : ''}
+              
+              <div class="field">
+                <div class="field-label">Assunto:</div>
+                <div class="field-value">${assunto}</div>
+              </div>
+              
+              <div class="field">
+                <div class="field-label">Mensagem:</div>
+                <div class="message-box">${mensagem.replace(/\n/g, '<br>')}</div>
+              </div>
+              
+              <p style="margin-top: 20px; font-size: 12px; color: #6c757d;">
+                ID do Contato: #${contatoId} | 
+                Recebido em: ${new Date().toLocaleString('pt-BR')}
+              </p>
+            </div>
+            <div class="footer">
+              <p>Este é um email automático. Não responda a esta mensagem.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      await transporter.sendMail({
+        from: `"Formulário de Contato" <${process.env.SMTP_USER}>`,
+        to: emailAdministrador,
+        subject: `Novo Contato: ${assunto}`,
+        html: htmlEmail,
+        text: `
+          Novo Contato Recebido
+          
+          Nome: ${nome}
+          Email: ${email}
+          Telefone: ${telefone || 'Não informado'}
+          Assunto: ${assunto}
+          
+          Mensagem:
+          ${mensagem}
+          
+          ID do Contato: #${contatoId}
+          Recebido em: ${new Date().toLocaleString('pt-BR')}
+        `
+      });
+
+      console.log(`Email enviado para o administrador sobre o contato #${contatoId}`);
+    } catch (erroEmail) {
+      console.error('Erro ao enviar email:', erroEmail);
+      // Não retornamos erro para o usuário, pois o contato foi salvo
+    }
 
     res.status(201).json({
       sucesso: true,
-      mensagem: 'Contato cadastrado com sucesso!',
-      id: resultado.rows[0].id
+      mensagem: 'Contato cadastrado com sucesso! Entraremos em contato em breve.',
+      id: contatoId
     });
 
   } catch (erro) {
@@ -190,18 +317,6 @@ router.post('/', async (req, res) => {
  *     tags: [Contatos]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: tipo
- *         schema:
- *           type: string
- *           enum: [cliente, fornecedor, parceiro]
- *         description: Filtrar por tipo de contato
- *       - in: query
- *         name: cidade
- *         schema:
- *           type: string
- *         description: Filtrar por cidade
  *     responses:
  *       200:
  *         description: Lista de contatos
@@ -225,27 +340,9 @@ router.post('/', async (req, res) => {
  */
 router.get('/', autenticar, async (req, res) => {
   try {
-    const { tipo, cidade } = req.query;
-    
-    let query = 'SELECT * FROM contatos WHERE 1=1';
-    const params = [];
-    let paramIndex = 1;
+    const query = 'SELECT * FROM contatos ORDER BY id DESC';
 
-    if (tipo) {
-      query += ` AND tipo = $${paramIndex}`;
-      params.push(tipo);
-      paramIndex++;
-    }
-
-    if (cidade) {
-      query += ` AND cidade ILIKE $${paramIndex}`;
-      params.push(`%${cidade}%`);
-      paramIndex++;
-    }
-
-    query += ' ORDER BY id DESC';
-
-    const resultado = await pool.query(query, params);
+    const resultado = await pool.query(query);
 
     res.json({
       sucesso: true,
@@ -348,6 +445,8 @@ router.get('/:id', autenticar, async (req, res) => {
  *             required:
  *               - nome
  *               - email
+ *               - assunto
+ *               - mensagem
  *             properties:
  *               nome:
  *                 type: string
@@ -356,11 +455,10 @@ router.get('/:id', autenticar, async (req, res) => {
  *                 format: email
  *               telefone:
  *                 type: string
- *               cidade:
+ *               assunto:
  *                 type: string
- *               tipo:
+ *               mensagem:
  *                 type: string
- *                 enum: [cliente, fornecedor, parceiro]
  *     responses:
  *       200:
  *         description: Contato atualizado com sucesso
@@ -385,18 +483,18 @@ router.get('/:id', autenticar, async (req, res) => {
 router.put('/:id', autenticar, async (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, email, telefone, cidade, tipo } = req.body;
+    const { nome, email, telefone, assunto, mensagem } = req.body;
 
-    if (!nome || !email) {
+    if (!nome || !email || !assunto || !mensagem) {
       return res.status(400).json({
         sucesso: false,
-        mensagem: 'Nome e email são obrigatórios'
+        mensagem: 'Nome, email, assunto e mensagem são obrigatórios'
       });
     }
 
     const query = `
       UPDATE contatos
-      SET nome = $1, email = $2, telefone = $3, cidade = $4, tipo = $5
+      SET nome = $1, email = $2, telefone = $3, assunto = $4, mensagem = $5
       WHERE id = $6
     `;
 
@@ -404,8 +502,8 @@ router.put('/:id', autenticar, async (req, res) => {
       nome,
       email,
       telefone,
-      cidade,
-      tipo,
+      assunto,
+      mensagem,
       id
     ]);
 

@@ -285,7 +285,7 @@ const validarImagemBase64 = (base64String) => {
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/', autenticar, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { 
       cnae,
