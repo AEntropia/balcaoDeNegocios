@@ -56,7 +56,6 @@ const validarImagemBase64 = (base64String) => {
  *         - estado
  *         - cidade
  *         - email
- *         - telefone
  *       properties:
  *         id:
  *           type: integer
@@ -131,7 +130,8 @@ const validarImagemBase64 = (base64String) => {
  *           example: "123"
  *         telefone:
  *           type: string
- *           description: Telefone de contato
+ *           nullable: true
+ *           description: Telefone de contato (opcional)
  *           example: "15981156556"
  *         email:
  *           type: string
@@ -191,7 +191,6 @@ const validarImagemBase64 = (base64String) => {
  *               - estado
  *               - cidade
  *               - email
- *               - telefone
  *             properties:
  *               cnae:
  *                 type: string
@@ -247,6 +246,8 @@ const validarImagemBase64 = (base64String) => {
  *                 example: "123"
  *               telefone:
  *                 type: string
+ *                 nullable: true
+ *                 description: Telefone de contato (opcional)
  *                 example: "15981156556"
  *               email:
  *                 type: string
@@ -312,10 +313,10 @@ router.post('/', async (req, res) => {
     } = req.body;
 
     // Validações obrigatórias
-    if (!cnae || !setor || !estado || !cidade || !email || !telefone) {
+    if (!cnae || !setor || !estado || !cidade || !email) {
       return res.status(400).json({
         sucesso: false,
-        mensagem: 'CNAE, setor, estado, cidade, email e telefone são obrigatórios'
+        mensagem: 'CNAE, setor, estado, cidade e email são obrigatórios'
       });
     }
 
@@ -385,7 +386,7 @@ router.post('/', async (req, res) => {
       ultimos4Digitos,
       nomeCartao || null,
       validadeCartao || null,
-      telefone,
+      telefone || null,
       email,
       true,
       data_inicio_assinatura || null,
@@ -769,6 +770,8 @@ router.get('/:id', async (req, res) => {
  *                 description: Array de imagens Base64 (substitui todas as anteriores)
  *               telefone:
  *                 type: string
+ *                 nullable: true
+ *                 description: Telefone de contato (opcional)
  *               email:
  *                 type: string
  *               ativo:
@@ -885,7 +888,7 @@ router.put('/:id', autenticar, async (req, res) => {
       tipoImovel,
       destaquesJson,
       imagensJson,
-      telefone,
+      telefone || null,
       email,
       ativo !== undefined ? ativo : true,
       data_inicio_assinatura || null,
