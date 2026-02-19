@@ -457,6 +457,11 @@ router.post('/', async (req, res) => {
  *         schema:
  *           type: number
  *         description: Preço máximo de venda
+ *       - in: query
+ *         name: statusAssinatura
+ *         schema:
+ *           type: string
+ *         description: "Filtro por status da assinatura (ex: ativo, inativo, cancelado)"
  *     responses:
  *       200:
  *         description: Lista de empresas paginada
@@ -495,7 +500,7 @@ router.get('/', async (req, res) => {
     const offset = (pagina - 1) * itensPorPagina;
 
     // Parâmetros de filtro
-    const { cnae, setor, estado, cidade, precoMin, precoMax } = req.query;
+    const { cnae, setor, estado, cidade, precoMin, precoMax, statusAssinatura } = req.query;
 
     // Construir WHERE dinamicamente
     const condicoes = [];
@@ -538,8 +543,14 @@ router.get('/', async (req, res) => {
       contadorParametro++;
     }
 
-    const clausulaWhere = condicoes.length > 0 
-      ? `WHERE ${condicoes.join(' AND ')}` 
+    if (statusAssinatura) {
+      condicoes.push(`status_assinatura = $${contadorParametro}`);
+      valores.push(statusAssinatura);
+      contadorParametro++;
+    }
+
+    const clausulaWhere = condicoes.length > 0
+      ? `WHERE ${condicoes.join(' AND ')}`
       : '';
 
     // Query para contar total de registros
@@ -578,8 +589,8 @@ router.get('/', async (req, res) => {
       // Parsear destaques
       try {
         if (empresa.destaques) {
-          destaques = typeof empresa.destaques === 'string' 
-            ? JSON.parse(empresa.destaques) 
+          destaques = typeof empresa.destaques === 'string'
+            ? JSON.parse(empresa.destaques)
             : empresa.destaques;
         }
       } catch (e) {
@@ -590,8 +601,8 @@ router.get('/', async (req, res) => {
       // Parsear imagens
       try {
         if (empresa.imagens) {
-          imagens = typeof empresa.imagens === 'string' 
-            ? JSON.parse(empresa.imagens) 
+          imagens = typeof empresa.imagens === 'string'
+            ? JSON.parse(empresa.imagens)
             : empresa.imagens;
         }
       } catch (e) {
@@ -795,7 +806,7 @@ router.get('/:id', async (req, res) => {
  *       500:
  *         description: Erro interno do servidor
  */
-router.put('/:id', autenticar, async (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { 
