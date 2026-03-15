@@ -93,11 +93,13 @@ app.get('/api-docs.json', (req, res) => {
 const contatosRoutes = require('./routes/contatos');
 const empresasRoutes = require('./routes/empresas');
 const authRoutes = require('./routes/auth');
+const empresasTokenRoutes = require('./routes/empresas_token_routes');
 
 // Usar rotas
 app.use('/api/contatos', contatosRoutes);
 app.use('/api/empresas', empresasRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/empresas', empresasTokenRoutes);
 
 // Rota raiz
 app.get('/', (req, res) => {

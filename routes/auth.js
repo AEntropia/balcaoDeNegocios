@@ -4,6 +4,7 @@ const pool = require('../config/database');
 const autenticar = require('../middleware/auth');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 
 /**
  * @swagger
@@ -712,6 +713,140 @@ router.get('/usuarios/:id', autenticar, async (req, res) => {
     res.status(500).json({
       sucesso: false,
       mensagem: 'Erro ao buscar usuário'
+    });
+  }
+});
+
+const crypto = require('crypto');
+
+/**
+ * @swagger
+ * /api/auth/esqueci-senha:
+ *   post:
+ *     summary: Solicitar redefinição de senha
+ *     tags: [Autenticação]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: joao@exemplo.com
+ *     responses:
+ *       200:
+ *         description: Email enviado com sucesso
+ *       404:
+ *         description: Email não encontrado
+ */
+router.post('/esqueci-senha', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Email é obrigatório'
+      });
+    }
+
+    // Buscar usuário
+    const resultado = await pool.query(
+      'SELECT id, nome, email, ativo FROM usuarios WHERE email = $1',
+      [email]
+    );
+
+    // Resposta genérica para não expor se o email existe ou não
+    if (resultado.rows.length === 0) {
+      return res.status(200).json({
+        sucesso: true,
+        mensagem: 'Se este email estiver cadastrado, você receberá uma senha temporária em breve'
+      });
+    }
+
+    const usuario = resultado.rows[0];
+
+    if (!usuario.ativo) {
+      return res.status(403).json({
+        sucesso: false,
+        mensagem: 'Usuário inativo. Entre em contato com o administrador'
+      });
+    }
+
+    // Gerar senha aleatória (12 caracteres: letras + números)
+    const senhaTemporaria = crypto.randomBytes(9).toString('base64').slice(0, 12);
+
+    // Criptografar e salvar no banco
+    const saltRounds = 10;
+    const senhaHash = await bcrypt.hash(senhaTemporaria, saltRounds);
+
+    await pool.query(
+      'UPDATE usuarios SET senha = $1 WHERE id = $2',
+      [senhaHash, usuario.id]
+    );
+
+    // Enviar email com nodemailer
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: process.env.SMTP_PORT || 587,
+      secure: false,
+      auth: {
+        user: process.env.SMTP_USER, // seu email
+        pass: process.env.SMTP_PASS  // senha de app do gmail
+      }
+    });
+
+    await transporter.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+      to: usuario.email,
+      subject: 'Sua senha temporária',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Olá, ${usuario.nome}!</h2>
+          <p>Recebemos uma solicitação de redefinição de senha para sua conta.</p>
+          <p>Sua senha temporária é:</p>
+          <div style="
+            background-color: #f4f4f4;
+            border-left: 4px solid #4A90E2;
+            padding: 12px 20px;
+            margin: 20px 0;
+            font-size: 22px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            font-family: monospace;
+          ">
+            ${senhaTemporaria}
+          </div>
+          <p style="color: #e53e3e; font-weight: bold;">
+            ⚠️ Por segurança, altere sua senha assim que fizer login.
+          </p>
+          <p>Acesse o sistema com esta senha temporária e vá em 
+            <strong>Perfil → Alterar Senha</strong> para definir uma senha pessoal.
+          </p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+          <p style="color: #999; font-size: 12px;">
+            Se você não solicitou a redefinição de senha, ignore este email. 
+            Sua senha anterior permaneceu ativa até este momento.
+          </p>
+        </div>
+      `
+    });
+
+    res.json({
+      sucesso: true,
+      mensagem: 'Se este email estiver cadastrado, você receberá uma senha temporária em breve'
+    });
+
+  } catch (erro) {
+    console.error('Erro ao processar esqueci a senha:', erro);
+    res.status(500).json({
+      sucesso: false,
+      mensagem: 'Erro ao processar solicitação'
     });
   }
 });
