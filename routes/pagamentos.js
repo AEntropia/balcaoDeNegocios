@@ -113,7 +113,8 @@ router.post('/assinar', async (req, res) => {
   }
 
   const dadosPlano = PLANOS[plano];
-
+console.log('Body recebido:', req.body);
+console.log('Access Token configurado:', process.env.MP_ACCESS_TOKEN?.slice(0, 20) + '...');
   try {
     // Criar assinatura no Mercado Pago (SDK v1)
     const assinatura = await mercadopago.preapproval.create({
