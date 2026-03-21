@@ -1,25 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const { PreApproval } = require('mercadopago');
-const client = require('../config/mercadopago');
+const mercadopago = require('../config/mercadopago');
 const pool = require('../config/database');
 const autenticar = require('../middleware/auth');
 
-const preApproval = new PreApproval(client);
-
 // ─── Planos disponíveis ────────────────────────────────────────────────────────
-// Defina os planos de assinatura do seu produto aqui.
-// frequency: quantidade | frequency_type: 'months' ou 'days'
 const PLANOS = {
   mensal: {
     nome: 'Anúncio Mensal',
-    valor: 99.90,          // ← Altere para o valor real
+    valor: 99.90,         // ← Altere para o valor real
     frequency: 1,
     frequency_type: 'months',
   },
   anual: {
     nome: 'Anúncio Anual',
-    valor: 899.90,         // ← Altere para o valor real
+    valor: 899.90,        // ← Altere para o valor real
     frequency: 12,
     frequency_type: 'months',
   },
@@ -28,12 +23,11 @@ const PLANOS = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Mapeia o status retornado pelo Mercado Pago para o status interno do sistema.
- * Referência: https://www.mercadopago.com.br/developers/pt/docs/subscriptions/integration-configuration/subscriptions-associated-plan
+ * Mapeia o status do Mercado Pago para o status interno do sistema.
  *
  * MP status  → status_assinatura interno
- * pending    → aguardando   (cartão cadastrado, aguardando primeiro pagamento)
- * authorized → analise      (primeiro pagamento aprovado, aguardando revisão interna)
+ * pending    → aguardando
+ * authorized → analise
  * paused     → pausada
  * cancelled  → cancelada
  */
@@ -54,19 +48,7 @@ const mapearStatusMP = (statusMP) => {
  * /api/pagamentos/assinar:
  *   post:
  *     summary: Criar assinatura recorrente para um anúncio
- *     description: |
- *       Cria uma assinatura no Mercado Pago (Preapproval) vinculada ao anúncio.
- *       O status do anúncio vai para **aguardando** imediatamente.
- *       Após o Mercado Pago confirmar o pagamento via webhook, o status muda para **analise**.
- *
- *       O frontend deve usar o SDK JS do Mercado Pago para coletar e tokenizar
- *       os dados do cartão **antes** de chamar esta rota, enviando o `cardTokenId`
- *       gerado pelo MP.
- *
- *       Referência dos tokens: https://www.mercadopago.com.br/developers/pt/docs/sdks-library/client-side/mp-js-v2
  *     tags: [Pagamentos]
- *     security:
- *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -81,16 +63,12 @@ const mapearStatusMP = (statusMP) => {
  *             properties:
  *               empresaId:
  *                 type: integer
- *                 description: ID do anúncio/empresa a assinar
- *                 example: 42
+ *                 example: 1
  *               cardTokenId:
  *                 type: string
- *                 description: Token do cartão gerado pelo SDK JS do Mercado Pago
  *                 example: "abc123tokenGeradoNoFrontend"
  *               emailPagador:
  *                 type: string
- *                 format: email
- *                 description: Email do titular do cartão
  *                 example: "pagador@email.com"
  *               plano:
  *                 type: string
@@ -98,32 +76,18 @@ const mapearStatusMP = (statusMP) => {
  *                 example: "mensal"
  *     responses:
  *       201:
- *         description: Assinatura criada. Status do anúncio alterado para "aguardando".
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 sucesso:
- *                   type: boolean
- *                 mensagem:
- *                   type: string
- *                 assinaturaId:
- *                   type: string
- *                   description: ID da assinatura gerada no Mercado Pago
- *                 statusAssinatura:
- *                   type: string
+ *         description: Assinatura criada com sucesso
  *       400:
  *         description: Parâmetros inválidos
  *       404:
  *         description: Empresa não encontrada
  *       500:
- *         description: Erro interno ou recusa do Mercado Pago
+ *         description: Erro ao processar assinatura
  */
 router.post('/assinar', async (req, res) => {
   const { empresaId, cardTokenId, emailPagador, plano } = req.body;
 
-  // Validações básicas
+  // Validações
   if (!empresaId || !cardTokenId || !emailPagador || !plano) {
     return res.status(400).json({
       sucesso: false,
@@ -138,7 +102,7 @@ router.post('/assinar', async (req, res) => {
     });
   }
 
-  // Verificar se a empresa existe
+  // Verificar se empresa existe
   const { rows } = await pool.query(
     'SELECT id, email FROM empresas WHERE id = $1',
     [empresaId]
@@ -151,56 +115,56 @@ router.post('/assinar', async (req, res) => {
   const dadosPlano = PLANOS[plano];
 
   try {
-    // Criar assinatura no Mercado Pago
-    // Docs: https://www.mercadopago.com.br/developers/pt/reference/subscriptions/_preapproval/post
-    const assinatura = await preApproval.create({
-      body: {
-        reason: `${dadosPlano.nome} - Anúncio #${empresaId}`,
-        auto_recurring: {
-          frequency: dadosPlano.frequency,
-          frequency_type: dadosPlano.frequency_type,
-          transaction_amount: dadosPlano.valor,
-          currency_id: 'BRL',
-        },
-        payer_email: emailPagador,
-        card_token_id: cardTokenId,
-        back_url: process.env.MP_BACK_URL || 'https://seusite.com.br/pagamento/retorno',
-        status: 'authorized', // 'authorized' inicia a cobrança imediatamente
+    // Criar assinatura no Mercado Pago (SDK v1)
+    const assinatura = await mercadopago.preapproval.create({
+      reason: `${dadosPlano.nome} - Anúncio #${empresaId}`,
+      auto_recurring: {
+        frequency: dadosPlano.frequency,
+        frequency_type: dadosPlano.frequency_type,
+        transaction_amount: dadosPlano.valor,
+        currency_id: 'BRL',
       },
+      payer_email: emailPagador,
+      card_token_id: cardTokenId,
+      back_url: process.env.MP_BACK_URL || 'https://seusite.com.br/pagamento/retorno',
+      status: 'authorized',
     });
 
-    const statusInterno = mapearStatusMP(assinatura.status);
+    const statusInterno = mapearStatusMP(assinatura.body.status);
 
-    // Persistir ID da assinatura e atualizar status no banco
+    // Salvar ID da assinatura e atualizar status no banco
     await pool.query(
       `UPDATE empresas
-          SET status_assinatura    = $1,
-              mp_assinatura_id     = $2,
-              mp_plano             = $3,
-              updated_at           = NOW()
+          SET status_assinatura = $1,
+              mp_assinatura_id  = $2,
+              mp_plano          = $3,
+              updated_at        = NOW()
         WHERE id = $4`,
-      [statusInterno, assinatura.id, plano, empresaId]
+      [statusInterno, assinatura.body.id, plano, empresaId]
     );
 
     return res.status(201).json({
       sucesso: true,
       mensagem: 'Assinatura criada com sucesso',
-      assinaturaId: assinatura.id,
+      assinaturaId: assinatura.body.id,
       statusAssinatura: statusInterno,
     });
 
   } catch (erro) {
-  console.error('Erro completo MP:', JSON.stringify(erro, null, 2));
+    console.error('Erro completo MP:', JSON.stringify(erro, null, 2));
 
-  const mensagemMP = erro?.cause?.[0]?.description || erro?.message || 'Erro desconhecido';
+    const mensagemMP =
+      erro?.cause?.[0]?.description ||
+      erro?.response?.data?.message ||
+      erro?.message ||
+      'Erro desconhecido';
 
-  return res.status(500).json({
-    sucesso: false,
-    mensagem: 'Falha ao processar assinatura',
-    detalhe: mensagemMP,
-    erroCompleto: erro?.cause || erro?.message  // ← temporário para debug
-  });
-}
+    return res.status(500).json({
+      sucesso: false,
+      mensagem: 'Falha ao processar assinatura',
+      detalhe: mensagemMP,
+    });
+  }
 });
 
 /**
@@ -210,37 +174,12 @@ router.post('/assinar', async (req, res) => {
  *     summary: Webhook do Mercado Pago (notificações de assinatura)
  *     description: |
  *       Endpoint chamado automaticamente pelo Mercado Pago quando o status
- *       de uma assinatura muda (pagamento aprovado, recusado, cancelado, etc).
- *
- *       **Configure esta URL no painel do Mercado Pago:**
- *       `Seu Painel MP → Configurações → Notificações (Webhooks)`
- *       URL: `https://seusite.com.br/api/pagamentos/webhook`
- *       Eventos: `subscription_preapproval`
- *
- *       ⚠️ Esta rota NÃO usa autenticação Bearer (o MP não envia token).
- *       A validação é feita pelo header `x-signature` e a variável `MP_WEBHOOK_SECRET`.
+ *       de uma assinatura muda.
+ *       Configure no painel do MP → Webhooks → subscription_preapproval
  *     tags: [Pagamentos]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               type:
- *                 type: string
- *                 example: "subscription_preapproval"
- *               data:
- *                 type: object
- *                 properties:
- *                   id:
- *                     type: string
- *                     description: ID da assinatura no Mercado Pago
  *     responses:
  *       200:
- *         description: Webhook processado com sucesso
- *       400:
- *         description: Payload inválido ou assinatura não encontrada no sistema
+ *         description: Webhook processado
  */
 router.post('/webhook', async (req, res) => {
   try {
@@ -256,25 +195,24 @@ router.post('/webhook', async (req, res) => {
       return res.status(400).json({ sucesso: false, mensagem: 'ID da assinatura ausente' });
     }
 
-    // Buscar dados atualizados da assinatura direto na API do MP
-    const assinatura = await preApproval.get({ id: assinaturaId });
+    // Buscar dados atualizados da assinatura no MP (SDK v1)
+    const assinatura = await mercadopago.preapproval.get(assinaturaId);
 
-    const statusInterno = mapearStatusMP(assinatura.status);
+    const statusInterno = mapearStatusMP(assinatura.body.status);
 
-    // Buscar empresa vinculada a esta assinatura
+    // Buscar empresa vinculada
     const { rows } = await pool.query(
       'SELECT id FROM empresas WHERE mp_assinatura_id = $1',
       [assinaturaId]
     );
 
     if (rows.length === 0) {
-      // Assinatura não pertence a nenhum anúncio cadastrado — ignorar silenciosamente
       return res.status(200).json({ ignorado: true, motivo: 'assinatura não vinculada' });
     }
 
     const empresaId = rows[0].id;
 
-    // Atualizar status no banco
+    // Atualizar status
     await pool.query(
       `UPDATE empresas
           SET status_assinatura = $1,
@@ -283,7 +221,7 @@ router.post('/webhook', async (req, res) => {
       [statusInterno, empresaId]
     );
 
-    console.log(`[Webhook MP] Empresa #${empresaId} → status: ${statusInterno} (MP: ${assinatura.status})`);
+    console.log(`[Webhook MP] Empresa #${empresaId} → status: ${statusInterno} (MP: ${assinatura.body.status})`);
 
     return res.status(200).json({ sucesso: true });
 
@@ -300,8 +238,6 @@ router.post('/webhook', async (req, res) => {
  *   get:
  *     summary: Consultar assinatura ativa de um anúncio
  *     tags: [Pagamentos]
- *     security:
- *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: empresaId
@@ -333,8 +269,8 @@ router.get('/assinatura/:empresaId', async (req, res) => {
   }
 
   try {
-    // Buscar dados frescos no MP
-    const assinatura = await preApproval.get({ id: empresa.mp_assinatura_id });
+    // Buscar dados frescos no MP (SDK v1)
+    const assinatura = await mercadopago.preapproval.get(empresa.mp_assinatura_id);
 
     return res.json({
       sucesso: true,
@@ -342,10 +278,10 @@ router.get('/assinatura/:empresaId', async (req, res) => {
         empresaId: empresa.id,
         plano: empresa.mp_plano,
         statusInterno: empresa.status_assinatura,
-        statusMP: assinatura.status,
-        proximaCobranca: assinatura.next_payment_date,
-        valorRecorrente: assinatura.auto_recurring?.transaction_amount,
-        dataInicio: assinatura.date_created,
+        statusMP: assinatura.body.status,
+        proximaCobranca: assinatura.body.next_payment_date,
+        valorRecorrente: assinatura.body.auto_recurring?.transaction_amount,
+        dataInicio: assinatura.body.date_created,
       },
     });
   } catch (erro) {
@@ -359,8 +295,6 @@ router.get('/assinatura/:empresaId', async (req, res) => {
  *   patch:
  *     summary: Cancelar assinatura de um anúncio
  *     tags: [Pagamentos]
- *     security:
- *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: empresaId
@@ -388,10 +322,10 @@ router.patch('/cancelar/:empresaId', async (req, res) => {
   const assinaturaId = rows[0].mp_assinatura_id;
 
   try {
-    // Cancelar no MP
-    await preApproval.update({
+    // Cancelar no MP (SDK v1)
+    await mercadopago.preapproval.update({
       id: assinaturaId,
-      body: { status: 'cancelled' },
+      status: 'cancelled',
     });
 
     // Atualizar banco
