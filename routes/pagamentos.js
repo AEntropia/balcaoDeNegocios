@@ -120,7 +120,7 @@ const mapearStatusMP = (statusMP) => {
  *       500:
  *         description: Erro interno ou recusa do Mercado Pago
  */
-router.post('/assinar', autenticar, async (req, res) => {
+router.post('/assinar', async (req, res) => {
   const { empresaId, cardTokenId, emailPagador, plano } = req.body;
 
   // Validações básicas
@@ -314,7 +314,7 @@ router.post('/webhook', async (req, res) => {
  *       404:
  *         description: Empresa ou assinatura não encontrada
  */
-router.get('/assinatura/:empresaId', autenticar, async (req, res) => {
+router.get('/assinatura/:empresaId', async (req, res) => {
   const { empresaId } = req.params;
 
   const { rows } = await pool.query(
@@ -373,7 +373,7 @@ router.get('/assinatura/:empresaId', autenticar, async (req, res) => {
  *       404:
  *         description: Empresa ou assinatura não encontrada
  */
-router.patch('/cancelar/:empresaId', autenticar, async (req, res) => {
+router.patch('/cancelar/:empresaId', async (req, res) => {
   const { empresaId } = req.params;
 
   const { rows } = await pool.query(
