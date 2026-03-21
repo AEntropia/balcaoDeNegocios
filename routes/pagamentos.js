@@ -190,17 +190,17 @@ router.post('/assinar', async (req, res) => {
     });
 
   } catch (erro) {
-    console.error('Erro ao criar assinatura no Mercado Pago:', erro);
+  console.error('Erro completo MP:', JSON.stringify(erro, null, 2));
 
-    // Tentar extrair mensagem legível da API do MP
-    const mensagemMP = erro?.cause?.[0]?.description || erro?.message || 'Erro desconhecido';
+  const mensagemMP = erro?.cause?.[0]?.description || erro?.message || 'Erro desconhecido';
 
-    return res.status(500).json({
-      sucesso: false,
-      mensagem: 'Falha ao processar assinatura',
-      detalhe: mensagemMP,
-    });
-  }
+  return res.status(500).json({
+    sucesso: false,
+    mensagem: 'Falha ao processar assinatura',
+    detalhe: mensagemMP,
+    erroCompleto: erro?.cause || erro?.message  // ← temporário para debug
+  });
+}
 });
 
 /**
