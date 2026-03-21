@@ -94,12 +94,14 @@ const contatosRoutes = require('./routes/contatos');
 const empresasRoutes = require('./routes/empresas');
 const authRoutes = require('./routes/auth');
 const empresasTokenRoutes = require('./routes/empresas_token_routes');
+const pagamentosRouter = require('./routes/pagamentos');
 
 // Usar rotas
 app.use('/api/contatos', contatosRoutes);
 app.use('/api/empresas', empresasRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/empresas', empresasTokenRoutes);
+app.use('/api/pagamentos', pagamentosRouter);
 
 // Rota raiz
 app.get('/', (req, res) => {
