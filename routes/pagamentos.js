@@ -116,8 +116,15 @@ router.post('/assinar', async (req, res) => {
 console.log('Body recebido:', req.body);
 console.log('Access Token configurado:', process.env.MP_ACCESS_TOKEN?.slice(0, 20) + '...');
   try {
-    // Criar assinatura no Mercado Pago (SDK v1)
-    const assinatura = await mercadopago.preapproval.create({
+  const fetch = require('node-fetch');
+
+  const resposta = await fetch('https://api.mercadopago.com/preapproval', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
       reason: `${dadosPlano.nome} - Anúncio #${empresaId}`,
       auto_recurring: {
         frequency: dadosPlano.frequency,
@@ -129,43 +136,47 @@ console.log('Access Token configurado:', process.env.MP_ACCESS_TOKEN?.slice(0, 2
       card_token_id: cardTokenId,
       back_url: process.env.MP_BACK_URL || 'https://seusite.com.br/pagamento/retorno',
       status: 'authorized',
-    });
+    }),
+  });
 
-    const statusInterno = mapearStatusMP(assinatura.body.status);
+  const assinatura = await resposta.json();
+  console.log('Resposta MP:', JSON.stringify(assinatura, null, 2));
 
-    // Salvar ID da assinatura e atualizar status no banco
-    await pool.query(
-      `UPDATE empresas
-          SET status_assinatura = $1,
-              mp_assinatura_id  = $2,
-              mp_plano          = $3,
-              updated_at        = NOW()
-        WHERE id = $4`,
-      [statusInterno, assinatura.body.id, plano, empresaId]
-    );
-
-    return res.status(201).json({
-      sucesso: true,
-      mensagem: 'Assinatura criada com sucesso',
-      assinaturaId: assinatura.body.id,
-      statusAssinatura: statusInterno,
-    });
-
-  } catch (erro) {
-    console.error('Erro completo MP:', JSON.stringify(erro, null, 2));
-
-    const mensagemMP =
-      erro?.cause?.[0]?.description ||
-      erro?.response?.data?.message ||
-      erro?.message ||
-      'Erro desconhecido';
-
+  if (!resposta.ok) {
     return res.status(500).json({
       sucesso: false,
       mensagem: 'Falha ao processar assinatura',
-      detalhe: mensagemMP,
+      detalhe: assinatura?.message || assinatura?.error || 'Erro desconhecido',
     });
   }
+
+  const statusInterno = mapearStatusMP(assinatura.status);
+
+  await pool.query(
+    `UPDATE empresas
+        SET status_assinatura = $1,
+            mp_assinatura_id  = $2,
+            mp_plano          = $3,
+            updated_at        = NOW()
+      WHERE id = $4`,
+    [statusInterno, assinatura.id, plano, empresaId]
+  );
+
+  return res.status(201).json({
+    sucesso: true,
+    mensagem: 'Assinatura criada com sucesso',
+    assinaturaId: assinatura.id,
+    statusAssinatura: statusInterno,
+  });
+
+} catch (erro) {
+  console.error('Erro completo:', JSON.stringify(erro, null, 2));
+  return res.status(500).json({
+    sucesso: false,
+    mensagem: 'Falha ao processar assinatura',
+    detalhe: erro?.message || 'Erro desconhecido',
+  });
+}
 });
 
 /**
