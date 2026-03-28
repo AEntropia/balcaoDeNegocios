@@ -803,7 +803,7 @@ router.get('/:id', async (req, res) => {
  *       - Para manter imagens existentes, inclua-as no array
  *       
  *       **E-mails automáticos:**
- *       - Se `status_assinatura` for alterado para `aprovado`, um e-mail de aprovação é enviado ao cadastrado.
+ *       - Se `status_assinatura` for alterado para `ativo`, um e-mail de aprovação é enviado ao cadastrado.
  *       - Para qualquer outra alteração, um e-mail informando a edição é enviado.
  *     tags: [Empresas]
  *     security:
@@ -983,7 +983,7 @@ router.put('/:id', async (req, res) => {
     ]);
 
     // ── Lógica de e-mail ──────────────────────────────────────────────────────
-    const foiAprovado = status_assinatura === 'aprovado' && statusAnterior !== 'aprovado';
+    const foiAprovado = status_assinatura === 'ativo' && statusAnterior !== 'ativo';
 
     if (foiAprovado) {
       enviarEmailAnuncioAprovado(emailEmpresa, nomeEmpresa).catch(err =>
