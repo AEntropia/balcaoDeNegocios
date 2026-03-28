@@ -3,10 +3,9 @@ const router = express.Router();
 const pool = require('../config/database');
 const autenticar = require('../middleware/auth');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer'); // npm install nodemailer
+const nodemailer = require('nodemailer');
 
 // ─── Configuração do transporte de email ────────────────────────────────────
-// Substitua pelas suas credenciais (ou use variáveis de ambiente)
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: process.env.SMTP_PORT || 587,
@@ -21,8 +20,8 @@ const transporter = nodemailer.createTransport({
 const MAX_IMAGENS = 5;
 const MAX_TAMANHO_BASE64 = 25 * 1024 * 1024;
 const TIPOS_MIME_PERMITIDOS = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-const TOKEN_EXPIRACAO_HORAS = 24;   // O token enviado expira em 24h se não for usado
-const TOKEN_COOLDOWN_DIAS = 7;      // Só pode solicitar novo token após 7 dias
+const TOKEN_EXPIRACAO_HORAS = 24;
+const TOKEN_COOLDOWN_DIAS = 7;
 
 /**
  * Valida uma string Base64 de imagem
@@ -49,6 +48,30 @@ const validarImagemBase64 = (base64String) => {
   return { valido: true };
 };
 
+/**
+ * Envia e-mail de anúncio editado
+ * @param {string} destinatario - E-mail da empresa
+ * @param {string} nomeEmpresa  - Setor (nome) da empresa editada
+ */
+const enviarEmailAnuncioEditado = async (destinatario, nomeEmpresa) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #2980b9;">Seu anúncio foi atualizado</h2>
+      <p>Olá,</p>
+      <p>Informamos que o seu anúncio <strong>${nomeEmpresa}</strong> foi <strong>editado</strong> na nossa plataforma.</p>
+      <p>Caso não tenha solicitado esta alteração ou acredite que isso ocorreu por engano, entre em contato com o nosso suporte.</p>
+      <br>
+      <p style="color: #555; font-size: 13px;">Esta é uma mensagem automática. Por favor, não responda diretamente a este e-mail.</p>
+    </div>
+  `;
+  await transporter.sendMail({
+    from: `"Plataforma" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+    to: destinatario,
+    subject: 'Seu anúncio foi atualizado',
+    html,
+  });
+};
+
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -67,7 +90,6 @@ const validarImagemBase64 = (base64String) => {
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID da empresa
  *     responses:
  *       200:
  *         description: Token enviado para o email cadastrado
@@ -82,22 +104,17 @@ router.post('/:id/solicitar-token', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 1. Verificar se a empresa existe e buscar o email
     const resultEmpresa = await pool.query(
       'SELECT id, email, cnae FROM empresas WHERE id = $1',
       [id]
     );
 
     if (resultEmpresa.rows.length === 0) {
-      return res.status(404).json({
-        sucesso: false,
-        mensagem: 'Empresa não encontrada',
-      });
+      return res.status(404).json({ sucesso: false, mensagem: 'Empresa não encontrada' });
     }
 
     const empresa = resultEmpresa.rows[0];
 
-    // 2. Verificar cooldown de 7 dias — busca o token mais recente (usado ou não)
     const resultUltimoToken = await pool.query(
       `SELECT criado_em
        FROM empresa_update_tokens
@@ -109,9 +126,7 @@ router.post('/:id/solicitar-token', async (req, res) => {
 
     if (resultUltimoToken.rows.length > 0) {
       const ultimoCriadoEm = new Date(resultUltimoToken.rows[0].criado_em);
-      const agora = new Date();
-      const diferencaMs = agora - ultimoCriadoEm;
-      const diferencaDias = diferencaMs / (1000 * 60 * 60 * 24);
+      const diferencaDias = (new Date() - ultimoCriadoEm) / (1000 * 60 * 60 * 24);
 
       if (diferencaDias < TOKEN_COOLDOWN_DIAS) {
         const diasRestantes = Math.ceil(TOKEN_COOLDOWN_DIAS - diferencaDias);
@@ -123,18 +138,14 @@ router.post('/:id/solicitar-token', async (req, res) => {
       }
     }
 
-    // 3. Gerar token seguro (64 caracteres hex)
     const token = crypto.randomBytes(32).toString('hex');
     const expiraEm = new Date(Date.now() + TOKEN_EXPIRACAO_HORAS * 60 * 60 * 1000);
 
-    // 4. Salvar token no banco
     await pool.query(
       `INSERT INTO empresa_update_tokens (empresa_id, token, usado, criado_em, expira_em)
        VALUES ($1, $2, FALSE, NOW(), $3)`,
       [id, token, expiraEm]
     );
-
-    // 5. Enviar email com o token
 
     await transporter.sendMail({
       from: `"${process.env.EMAIL_NOME || 'Solid Finance'}" <${process.env.SMTP_USER}>`,
@@ -145,23 +156,20 @@ router.post('/:id/solicitar-token', async (req, res) => {
           <h2 style="color: #333;">Atualização do seu anúncio</h2>
           <p>Você solicitou a atualização do anúncio <strong>${empresa.cnae}</strong>.</p>
           <p>Use o código abaixo para liberar a edição. Ele é válido por <strong>${TOKEN_EXPIRACAO_HORAS} horas</strong> e pode ser usado apenas uma vez.</p>
-          
           <div style="background: #f4f4f4; border-radius: 8px; padding: 20px; text-align: center; margin: 24px 0;">
             <p style="margin: 0; font-size: 13px; color: #666;">Seu código de verificação</p>
             <p style="margin: 8px 0 0; font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #111; font-family: monospace;">
               ${token}
             </p>
           </div>
-
           <p style="color: #888; font-size: 13px;">
-            Se você não solicitou essa alteração, ignore este email. 
+            Se você não solicitou essa alteração, ignore este email.
             O próximo código só poderá ser solicitado após ${TOKEN_COOLDOWN_DIAS} dias.
           </p>
         </div>
       `,
     });
 
-    // Resposta genérica — não revelar o email completo por segurança
     const emailMascarado = empresa.email.replace(
       /(.{2})(.*)(@.*)/,
       (_, a, b, c) => a + '*'.repeat(Math.max(b.length, 3)) + c
@@ -186,13 +194,13 @@ router.post('/:id/solicitar-token', async (req, res) => {
 
 /**
  * @swagger
- * /api/empresas/{id}/update-com-token:
- *   put:
- *     summary: Atualizar empresa usando token de verificação
+ * /api/empresas/{id}/verificar-token:
+ *   post:
+ *     summary: Verificar se um token é válido (sem consumi-lo)
  *     description: |
- *       Valida o token enviado por email e atualiza os dados da empresa.
- *       O token é invalidado após o uso.
- *       O status da assinatura é automaticamente alterado para "analise".
+ *       Verifica se o token existe, pertence à empresa, não foi usado e não expirou.
+ *       Não marca o token como usado — use esta rota para liberar o formulário no frontend
+ *       antes de o usuário preencher os dados.
  *     tags: [Empresas]
  *     parameters:
  *       - in: path
@@ -200,7 +208,6 @@ router.post('/:id/solicitar-token', async (req, res) => {
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID da empresa
  *     requestBody:
  *       required: true
  *       content:
@@ -212,8 +219,96 @@ router.post('/:id/solicitar-token', async (req, res) => {
  *             properties:
  *               token:
  *                 type: string
- *                 description: Token de verificação recebido por email
- *                 example: "a3f1bc..."
+ *     responses:
+ *       200:
+ *         description: Token válido
+ *       400:
+ *         description: Token inválido, expirado ou já utilizado
+ *       404:
+ *         description: Empresa não encontrada
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.post('/:id/verificar-token', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ sucesso: false, mensagem: 'Token de verificação é obrigatório' });
+    }
+
+    const resultEmpresa = await pool.query(
+      'SELECT id FROM empresas WHERE id = $1',
+      [id]
+    );
+
+    if (resultEmpresa.rows.length === 0) {
+      return res.status(404).json({ sucesso: false, mensagem: 'Empresa não encontrada' });
+    }
+
+    const resultToken = await pool.query(
+      `SELECT id, usado, expira_em
+       FROM empresa_update_tokens
+       WHERE token = $1 AND empresa_id = $2`,
+      [token, id]
+    );
+
+    if (resultToken.rows.length === 0) {
+      return res.status(400).json({ sucesso: false, mensagem: 'Token inválido ou não pertence a este anúncio' });
+    }
+
+    const tokenRow = resultToken.rows[0];
+
+    if (tokenRow.usado) {
+      return res.status(400).json({ sucesso: false, mensagem: 'Este token já foi utilizado' });
+    }
+
+    if (new Date() > new Date(tokenRow.expira_em)) {
+      return res.status(400).json({ sucesso: false, mensagem: 'Token expirado. Solicite um novo código.' });
+    }
+
+    return res.json({ sucesso: true, mensagem: 'Token válido. Você pode prosseguir com a edição.' });
+
+  } catch (erro) {
+    console.error('Erro ao verificar token:', erro);
+    return res.status(500).json({
+      sucesso: false,
+      mensagem: 'Erro ao verificar token',
+      erro: erro.message,
+    });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/empresas/{id}/update-com-token:
+ *   put:
+ *     summary: Atualizar empresa usando token de verificação
+ *     description: |
+ *       Atualiza os dados da empresa e invalida o token após o uso.
+ *       O status da assinatura é automaticamente alterado para "analise".
+ *       Chame POST /verificar-token antes para validar o token e liberar o formulário.
+ *     tags: [Empresas]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
  *               cnae:
  *                 type: string
  *               setor:
@@ -250,97 +345,47 @@ router.post('/:id/solicitar-token', async (req, res) => {
  *     responses:
  *       200:
  *         description: Empresa atualizada com sucesso. Status alterado para "analise".
- *       400:
- *         description: Token inválido, expirado ou já utilizado
  *       404:
  *         description: Empresa não encontrada
  *       500:
  *         description: Erro interno do servidor
  */
 router.put('/:id/update-com-token', async (req, res) => {
-  const client = await pool.connect(); // Usar transação para garantir atomicidade
+  const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     const { id } = req.params;
     const {
       token,
-      cnae,
-      setor,
-      estado,
-      cidade,
-      faturamentoAnual,
-      margemLucro,
-      precoVenda,
-      anoFundacao,
-      numeroFuncionarios,
-      tipoImovel,
-      destaques,
-      imagens,
-      telefone,
-      email,
+      cnae, setor, estado, cidade,
+      faturamentoAnual, margemLucro, precoVenda,
+      anoFundacao, numeroFuncionarios, tipoImovel,
+      destaques, imagens, telefone, email,
     } = req.body;
 
-    // 1. Validar presença do token
-    if (!token) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        sucesso: false,
-        mensagem: 'Token de verificação é obrigatório',
-      });
-    }
-
-    // 2. Buscar token no banco — deve pertencer a esta empresa, não estar usado e não ter expirado
-    const resultToken = await client.query(
-      `SELECT id, usado, expira_em
-       FROM empresa_update_tokens
-       WHERE token = $1 AND empresa_id = $2`,
-      [token, id]
-    );
-
-    if (resultToken.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        sucesso: false,
-        mensagem: 'Token inválido ou não pertence a este anúncio',
-      });
-    }
-
-    const tokenRow = resultToken.rows[0];
-
-    // 3. Verificar se já foi usado
-    if (tokenRow.usado) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        sucesso: false,
-        mensagem: 'Este token já foi utilizado',
-      });
-    }
-
-    // 4. Verificar se expirou
-    if (new Date() > new Date(tokenRow.expira_em)) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        sucesso: false,
-        mensagem: 'Token expirado. Solicite um novo código.',
-      });
-    }
-
-    // 5. Verificar se a empresa existe
+    // 1. Verificar se a empresa existe e buscar email e setor para notificação
     const resultEmpresa = await client.query(
-      'SELECT id FROM empresas WHERE id = $1',
+      'SELECT id, email, setor FROM empresas WHERE id = $1',
       [id]
     );
 
     if (resultEmpresa.rows.length === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({
-        sucesso: false,
-        mensagem: 'Empresa não encontrada',
-      });
+      return res.status(404).json({ sucesso: false, mensagem: 'Empresa não encontrada' });
     }
 
-    // 6. Validar imagens Base64 (se enviadas)
+    const emailEmpresa = resultEmpresa.rows[0].email;
+    // Usa o setor do body se foi alterado, senão mantém o do banco
+    const nomeEmpresa = setor || resultEmpresa.rows[0].setor;
+
+    // 2. Buscar o token para invalidá-lo após o update
+    const resultToken = await client.query(
+      `SELECT id FROM empresa_update_tokens WHERE token = $1 AND empresa_id = $2`,
+      [token, id]
+    );
+
+    // 3. Validar imagens Base64 (se enviadas)
     let imagensValidadas = [];
     if (imagens && Array.isArray(imagens)) {
       if (imagens.length > MAX_IMAGENS) {
@@ -354,22 +399,17 @@ router.put('/:id/update-com-token', async (req, res) => {
         const validacao = validarImagemBase64(imagens[i]);
         if (!validacao.valido) {
           await client.query('ROLLBACK');
-          return res.status(400).json({
-            sucesso: false,
-            mensagem: `Erro na imagem ${i + 1}: ${validacao.erro}`,
-          });
+          return res.status(400).json({ sucesso: false, mensagem: `Erro na imagem ${i + 1}: ${validacao.erro}` });
         }
         imagensValidadas.push(imagens[i]);
       }
     }
 
-    // 7. Converter arrays para JSON
+    // 4. Converter arrays para JSON
     const destaquesJson = Array.isArray(destaques) ? JSON.stringify(destaques) : null;
-    const imagensJson = imagens !== undefined
-      ? JSON.stringify(imagensValidadas)
-      : null;
+    const imagensJson = imagens !== undefined ? JSON.stringify(imagensValidadas) : null;
 
-    // 8. Atualizar empresa — status_assinatura é forçado para 'analise'
+    // 5. Atualizar empresa
     await client.query(
       `UPDATE empresas
        SET cnae                  = COALESCE($1,  cnae),
@@ -390,34 +430,29 @@ router.put('/:id/update-com-token', async (req, res) => {
            updated_at            = NOW()
        WHERE id = $15`,
       [
-        cnae         || null,
-        setor        || null,
-        estado       || null,
-        cidade       || null,
-        faturamentoAnual   || null,
-        margemLucro        || null,
-        precoVenda         || null,
-        anoFundacao        || null,
-        numeroFuncionarios || null,
-        tipoImovel         || null,
-        destaquesJson,
-        imagensJson,
-        telefone     || null,
-        email        || null,
+        cnae || null, setor || null, estado || null, cidade || null,
+        faturamentoAnual || null, margemLucro || null, precoVenda || null,
+        anoFundacao || null, numeroFuncionarios || null, tipoImovel || null,
+        destaquesJson, imagensJson,
+        telefone || null, email || null,
         id,
       ]
     );
 
-    // 9. Invalidar o token — marcar como usado
-    await client.query(
-      `UPDATE empresa_update_tokens
-       SET usado    = TRUE,
-           usado_em = NOW()
-       WHERE id = $1`,
-      [tokenRow.id]
-    );
+    // 6. Invalidar o token
+    if (resultToken.rows.length > 0) {
+      await client.query(
+        `UPDATE empresa_update_tokens SET usado = TRUE, usado_em = NOW() WHERE id = $1`,
+        [resultToken.rows[0].id]
+      );
+    }
 
     await client.query('COMMIT');
+
+    // 7. Enviar e-mail de notificação (sem bloquear a resposta ao cliente)
+    enviarEmailAnuncioEditado(emailEmpresa, nomeEmpresa).catch(err =>
+      console.error('Erro ao enviar e-mail de edição:', err)
+    );
 
     return res.json({
       sucesso: true,
@@ -438,6 +473,4 @@ router.put('/:id/update-com-token', async (req, res) => {
   }
 });
 
-// ────────────────────────────────────────────────────────────────────────────
-// Exportar apenas as rotas novas — monte-as no seu app.js junto com as existentes
 module.exports = router;

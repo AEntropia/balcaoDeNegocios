@@ -2,6 +2,93 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
 const autenticar = require('../middleware/auth');
+const nodemailer = require('nodemailer');
+
+// ─────────────────────────────────────────────
+// Configuração do Nodemailer
+// Ajuste as variáveis de ambiente conforme seu provedor (SMTP, SendGrid, etc.)
+// ─────────────────────────────────────────────
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT) || 587,
+  secure: process.env.SMTP_SECURE === 'true', // true para porta 465
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+/**
+ * Envia e-mail de anúncio deletado
+ * @param {string} destinatario - E-mail da empresa
+ * @param {string} nomeEmpresa  - Setor (nome) da empresa deletada
+ */
+const enviarEmailAnuncioDeletado = async (destinatario, nomeEmpresa) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #c0392b;">Seu anúncio foi removido</h2>
+      <p>Olá,</p>
+      <p>Informamos que o seu anúncio <strong>${nomeEmpresa}</strong> foi <strong>removido</strong> da nossa plataforma.</p>
+      <p>Caso não tenha solicitado esta remoção ou acredite que isso ocorreu por engano, entre em contato com o nosso suporte o quanto antes.</p>
+      <br>
+      <p style="color: #555; font-size: 13px;">Esta é uma mensagem automática. Por favor, não responda diretamente a este e-mail.</p>
+    </div>
+  `;
+  await transporter.sendMail({
+    from: `"Plataforma" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+    to: destinatario,
+    subject: 'Seu anúncio foi removido',
+    html,
+  });
+};
+
+/**
+ * Envia e-mail de anúncio aprovado
+ * @param {string} destinatario - E-mail da empresa
+ * @param {string} nomeEmpresa  - Setor (nome) da empresa aprovada
+ */
+const enviarEmailAnuncioAprovado = async (destinatario, nomeEmpresa) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #27ae60;">🎉 Seu anúncio foi aprovado!</h2>
+      <p>Olá,</p>
+      <p>Temos ótimas notícias! O seu anúncio <strong>${nomeEmpresa}</strong> foi <strong>aprovado</strong> e já está visível na nossa plataforma.</p>
+      <p>A partir de agora, potenciais compradores já podem visualizar as informações da sua empresa.</p>
+      <br>
+      <p style="color: #555; font-size: 13px;">Esta é uma mensagem automática. Por favor, não responda diretamente a este e-mail.</p>
+    </div>
+  `;
+  await transporter.sendMail({
+    from: `"Plataforma" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+    to: destinatario,
+    subject: '✅ Seu anúncio foi aprovado!',
+    html,
+  });
+};
+
+/**
+ * Envia e-mail de anúncio editado (alteração genérica)
+ * @param {string} destinatario - E-mail da empresa
+ * @param {string} nomeEmpresa  - Setor (nome) da empresa editada
+ */
+const enviarEmailAnuncioEditado = async (destinatario, nomeEmpresa) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #2980b9;">Seu anúncio foi atualizado</h2>
+      <p>Olá,</p>
+      <p>Informamos que o seu anúncio <strong>${nomeEmpresa}</strong> foi <strong>editado</strong> na nossa plataforma.</p>
+      <p>Caso não tenha solicitado esta alteração ou acredite que isso ocorreu por engano, entre em contato com o nosso suporte.</p>
+      <br>
+      <p style="color: #555; font-size: 13px;">Esta é uma mensagem automática. Por favor, não responda diretamente a este e-mail.</p>
+    </div>
+  `;
+  await transporter.sendMail({
+    from: `"Plataforma" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+    to: destinatario,
+    subject: 'Seu anúncio foi atualizado',
+    html,
+  });
+};
 
 // Constantes de validação
 const MAX_IMAGENS = 5;
@@ -14,17 +101,14 @@ const TIPOS_MIME_PERMITIDOS = ['image/jpeg', 'image/jpg', 'image/png', 'image/we
  * @returns {Object} { valido: boolean, erro: string }
  */
 const validarImagemBase64 = (base64String) => {
-  // Verificar se tem o formato correto
   if (!base64String || typeof base64String !== 'string') {
     return { valido: false, erro: 'Imagem inválida' };
   }
 
-  // Verificar se começa com data:
   if (!base64String.startsWith('data:image/')) {
     return { valido: false, erro: 'Formato de imagem inválido. Use: data:image/[tipo];base64,...' };
   }
 
-  // Extrair tipo MIME
   const matches = base64String.match(/^data:([^;]+);base64,/);
   if (!matches) {
     return { valido: false, erro: 'Formato Base64 inválido' };
@@ -35,8 +119,7 @@ const validarImagemBase64 = (base64String) => {
     return { valido: false, erro: `Tipo de imagem não permitido. Use: ${TIPOS_MIME_PERMITIDOS.join(', ')}` };
   }
 
-  // Verificar tamanho aproximado (Base64 aumenta ~33% o tamanho original)
-  const tamanhoEstimado = base64String.length * 0.75; // Estimativa do tamanho real
+  const tamanhoEstimado = base64String.length * 0.75;
   if (tamanhoEstimado > MAX_TAMANHO_BASE64) {
     return { valido: false, erro: `Imagem muito grande. Máximo: 5MB` };
   }
@@ -323,7 +406,6 @@ router.post('/', async (req, res) => {
     // Validar imagens Base64
     let imagensValidadas = [];
     if (imagens && Array.isArray(imagens)) {
-      // Verificar número máximo de imagens
       if (imagens.length > MAX_IMAGENS) {
         return res.status(400).json({
           sucesso: false,
@@ -331,7 +413,6 @@ router.post('/', async (req, res) => {
         });
       }
 
-      // Validar cada imagem
       for (let i = 0; i < imagens.length; i++) {
         const validacao = validarImagemBase64(imagens[i]);
         if (!validacao.valido) {
@@ -351,13 +432,9 @@ router.post('/', async (req, res) => {
       ultimos4Digitos = apenasNumeros.slice(-4);
     }
 
-    // Converter destaques para JSON
     const destaquesJson = Array.isArray(destaques) ? JSON.stringify(destaques) : null;
-    
-    // Converter imagens para JSON (armazena as strings Base64 completas)
     const imagensJson = imagensValidadas.length > 0 ? JSON.stringify(imagensValidadas) : JSON.stringify([]);
 
-    // Inserir empresa
     const query = `
       INSERT INTO empresas (
         cnae, setor, estado, cidade, faturamento_anual, margem_lucro,
@@ -412,7 +489,6 @@ router.post('/', async (req, res) => {
 });
 
 /**
- * /**
  * @swagger
  * /api/empresas:
  *   get:
@@ -494,15 +570,12 @@ router.post('/', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    // Parâmetros de paginação
     const pagina = parseInt(req.query.pagina) || 1;
     const itensPorPagina = 10;
     const offset = (pagina - 1) * itensPorPagina;
 
-    // Parâmetros de filtro
     const { cnae, setor, estado, cidade, precoMin, precoMax, statusAssinatura } = req.query;
 
-    // Construir WHERE dinamicamente
     const condicoes = [];
     const valores = [];
     let contadorParametro = 1;
@@ -553,7 +626,6 @@ router.get('/', async (req, res) => {
       ? `WHERE ${condicoes.join(' AND ')}`
       : '';
 
-    // Query para contar total de registros
     const queryContagem = `
       SELECT COUNT(*) as total
       FROM empresas
@@ -564,7 +636,6 @@ router.get('/', async (req, res) => {
     const totalItens = parseInt(resultadoContagem.rows[0].total);
     const totalPaginas = Math.ceil(totalItens / itensPorPagina);
 
-    // Query principal com paginação
     const query = `
       SELECT id, cnae, setor, estado, cidade, faturamento_anual, margem_lucro,
              preco_venda, ano_fundacao, numero_funcionarios, tipo_imovel,
@@ -581,12 +652,10 @@ router.get('/', async (req, res) => {
 
     const resultado = await pool.query(query, valores);
 
-    // Parsear JSON dos campos destaques e imagens COM SEGURANÇA
     const dadosFormatados = resultado.rows.map(empresa => {
       let destaques = [];
       let imagens = [];
 
-      // Parsear destaques
       try {
         if (empresa.destaques) {
           destaques = typeof empresa.destaques === 'string'
@@ -598,7 +667,6 @@ router.get('/', async (req, res) => {
         destaques = [];
       }
 
-      // Parsear imagens
       try {
         if (empresa.imagens) {
           imagens = typeof empresa.imagens === 'string'
@@ -637,6 +705,7 @@ router.get('/', async (req, res) => {
     });
   }
 });
+
 /**
  * @swagger
  * /api/empresas/{id}:
@@ -687,7 +756,6 @@ router.get('/:id', async (req, res) => {
 
     const empresa = resultado.rows[0];
     
-    // Parsear JSON COM SEGURANÇA
     try {
       empresa.destaques = empresa.destaques 
         ? (typeof empresa.destaques === 'string' ? JSON.parse(empresa.destaques) : empresa.destaques)
@@ -716,7 +784,7 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({
       sucesso: false,
       mensagem: 'Erro ao buscar empresa',
-      erro: erro.message // ← Veja o erro real
+      erro: erro.message
     });
   }
 });
@@ -733,6 +801,10 @@ router.get('/:id', async (req, res) => {
  *       - Envie até 5 imagens em formato Base64
  *       - As imagens enviadas SUBSTITUIRÃO completamente as anteriores
  *       - Para manter imagens existentes, inclua-as no array
+ *       
+ *       **E-mails automáticos:**
+ *       - Se `status_assinatura` for alterado para `aprovado`, um e-mail de aprovação é enviado ao cadastrado.
+ *       - Para qualquer outra alteração, um e-mail informando a edição é enviado.
  *     tags: [Empresas]
  *     security:
  *       - bearerAuth: []
@@ -830,23 +902,27 @@ router.put('/:id', async (req, res) => {
       status_assinatura
     } = req.body;
 
-    // Verificar se empresa existe
-    const empresaExistente = await pool.query(
-      'SELECT id FROM empresas WHERE id = $1',
+    // Buscar empresa atual para comparar status e obter e-mail e setor
+    const empresaAtual = await pool.query(
+      'SELECT id, email, setor, status_assinatura FROM empresas WHERE id = $1',
       [id]
     );
 
-    if (empresaExistente.rows.length === 0) {
+    if (empresaAtual.rows.length === 0) {
       return res.status(404).json({
         sucesso: false,
         mensagem: 'Empresa não encontrada'
       });
     }
 
+    const statusAnterior = empresaAtual.rows[0].status_assinatura;
+    const emailEmpresa   = empresaAtual.rows[0].email;
+    // Usa o setor do body se foi alterado, senão mantém o do banco
+    const nomeEmpresa    = setor || empresaAtual.rows[0].setor;
+
     // Validar imagens Base64 se foram enviadas
     let imagensValidadas = [];
     if (imagens && Array.isArray(imagens)) {
-      // Verificar número máximo de imagens
       if (imagens.length > MAX_IMAGENS) {
         return res.status(400).json({
           sucesso: false,
@@ -854,7 +930,6 @@ router.put('/:id', async (req, res) => {
         });
       }
 
-      // Validar cada imagem
       for (let i = 0; i < imagens.length; i++) {
         const validacao = validarImagemBase64(imagens[i]);
         if (!validacao.valido) {
@@ -867,7 +942,6 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    // Converter arrays para JSON
     const destaquesJson = Array.isArray(destaques) ? JSON.stringify(destaques) : null;
     const imagensJson = imagens !== undefined 
       ? (imagensValidadas.length > 0 ? JSON.stringify(imagensValidadas) : JSON.stringify([]))
@@ -908,6 +982,20 @@ router.put('/:id', async (req, res) => {
       id
     ]);
 
+    // ── Lógica de e-mail ──────────────────────────────────────────────────────
+    const foiAprovado = status_assinatura === 'aprovado' && statusAnterior !== 'aprovado';
+
+    if (foiAprovado) {
+      enviarEmailAnuncioAprovado(emailEmpresa, nomeEmpresa).catch(err =>
+        console.error('Erro ao enviar e-mail de aprovação:', err)
+      );
+    } else {
+      enviarEmailAnuncioEditado(emailEmpresa, nomeEmpresa).catch(err =>
+        console.error('Erro ao enviar e-mail de edição:', err)
+      );
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     res.json({
       sucesso: true,
       mensagem: 'Empresa atualizada com sucesso',
@@ -928,6 +1016,7 @@ router.put('/:id', async (req, res) => {
  * /api/empresas/{id}:
  *   delete:
  *     summary: Deletar empresa
+ *     description: Remove a empresa e envia e-mail de notificação ao endereço cadastrado.
  *     tags: [Empresas]
  *     security:
  *       - bearerAuth: []
@@ -952,9 +1041,9 @@ router.delete('/:id', autenticar, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Verificar se empresa existe
+    // Buscar empresa para obter e-mail e setor ANTES de deletar
     const empresa = await pool.query(
-      'SELECT id FROM empresas WHERE id = $1',
+      'SELECT id, email, setor FROM empresas WHERE id = $1',
       [id]
     );
 
@@ -965,8 +1054,16 @@ router.delete('/:id', autenticar, async (req, res) => {
       });
     }
 
+    const emailEmpresa = empresa.rows[0].email;
+    const nomeEmpresa  = empresa.rows[0].setor;
+
     // Deletar empresa do banco (as imagens Base64 serão deletadas junto)
     await pool.query('DELETE FROM empresas WHERE id = $1', [id]);
+
+    // Enviar e-mail de notificação (sem bloquear a resposta ao cliente)
+    enviarEmailAnuncioDeletado(emailEmpresa, nomeEmpresa).catch(err =>
+      console.error('Erro ao enviar e-mail de deleção:', err)
+    );
 
     res.json({
       sucesso: true,
@@ -1079,7 +1176,6 @@ router.patch('/:id/status-assinatura', autenticar, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    // Validar status
     const statusPermitidos = ['ativo', 'expirado', 'analise'];
     
     if (!status) {
@@ -1096,7 +1192,6 @@ router.patch('/:id/status-assinatura', autenticar, async (req, res) => {
       });
     }
 
-    // Verificar se a empresa existe
     const queryVerificar = 'SELECT id FROM empresas WHERE id = $1';
     const resultadoVerificar = await pool.query(queryVerificar, [id]);
 
@@ -1107,7 +1202,6 @@ router.patch('/:id/status-assinatura', autenticar, async (req, res) => {
       });
     }
 
-    // Atualizar status
     const queryAtualizar = `
       UPDATE empresas 
       SET status_assinatura = $1,
