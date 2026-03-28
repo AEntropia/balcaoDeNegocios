@@ -288,9 +288,10 @@ router.post('/:id/verificar-token', async (req, res) => {
  *   put:
  *     summary: Atualizar empresa usando token de verificação
  *     description: |
- *       Atualiza os dados da empresa e invalida o token após o uso.
+ *       Valida o token novamente (por segurança) e atualiza os dados da empresa.
+ *       O token é invalidado após o uso.
  *       O status da assinatura é automaticamente alterado para "analise".
- *       Chame POST /verificar-token antes para validar o token e liberar o formulário.
+ *       Recomenda-se chamar POST /verificar-token antes para liberar o formulário.
  *     tags: [Empresas]
  *     parameters:
  *       - in: path
@@ -345,6 +346,8 @@ router.post('/:id/verificar-token', async (req, res) => {
  *     responses:
  *       200:
  *         description: Empresa atualizada com sucesso. Status alterado para "analise".
+ *       400:
+ *         description: Token inválido, expirado ou já utilizado
  *       404:
  *         description: Empresa não encontrada
  *       500:
@@ -364,7 +367,38 @@ router.put('/:id/update-com-token', async (req, res) => {
       destaques, imagens, telefone, email,
     } = req.body;
 
-    // 1. Verificar se a empresa existe e buscar email e setor para notificação
+    // 1. Validar presença do token
+    if (!token) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ sucesso: false, mensagem: 'Token de verificação é obrigatório' });
+    }
+
+    // 2. Buscar e validar o token
+    const resultToken = await client.query(
+      `SELECT id, usado, expira_em
+       FROM empresa_update_tokens
+       WHERE token = $1 AND empresa_id = $2`,
+      [token, id]
+    );
+
+    if (resultToken.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ sucesso: false, mensagem: 'Token inválido ou não pertence a este anúncio' });
+    }
+
+    const tokenRow = resultToken.rows[0];
+
+    if (tokenRow.usado) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ sucesso: false, mensagem: 'Este token já foi utilizado' });
+    }
+
+    if (new Date() > new Date(tokenRow.expira_em)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ sucesso: false, mensagem: 'Token expirado. Solicite um novo código.' });
+    }
+
+    // 3. Verificar se a empresa existe e buscar email e setor para o e-mail de notificação
     const resultEmpresa = await client.query(
       'SELECT id, email, setor FROM empresas WHERE id = $1',
       [id]
@@ -379,13 +413,7 @@ router.put('/:id/update-com-token', async (req, res) => {
     // Usa o setor do body se foi alterado, senão mantém o do banco
     const nomeEmpresa = setor || resultEmpresa.rows[0].setor;
 
-    // 2. Buscar o token para invalidá-lo após o update
-    const resultToken = await client.query(
-      `SELECT id FROM empresa_update_tokens WHERE token = $1 AND empresa_id = $2`,
-      [token, id]
-    );
-
-    // 3. Validar imagens Base64 (se enviadas)
+    // 4. Validar imagens Base64 (se enviadas)
     let imagensValidadas = [];
     if (imagens && Array.isArray(imagens)) {
       if (imagens.length > MAX_IMAGENS) {
@@ -405,11 +433,11 @@ router.put('/:id/update-com-token', async (req, res) => {
       }
     }
 
-    // 4. Converter arrays para JSON
+    // 5. Converter arrays para JSON
     const destaquesJson = Array.isArray(destaques) ? JSON.stringify(destaques) : null;
     const imagensJson = imagens !== undefined ? JSON.stringify(imagensValidadas) : null;
 
-    // 5. Atualizar empresa
+    // 6. Atualizar empresa
     await client.query(
       `UPDATE empresas
        SET cnae                  = COALESCE($1,  cnae),
@@ -439,17 +467,15 @@ router.put('/:id/update-com-token', async (req, res) => {
       ]
     );
 
-    // 6. Invalidar o token
-    if (resultToken.rows.length > 0) {
-      await client.query(
-        `UPDATE empresa_update_tokens SET usado = TRUE, usado_em = NOW() WHERE id = $1`,
-        [resultToken.rows[0].id]
-      );
-    }
+    // 7. Invalidar o token
+    await client.query(
+      `UPDATE empresa_update_tokens SET usado = TRUE, usado_em = NOW() WHERE id = $1`,
+      [tokenRow.id]
+    );
 
     await client.query('COMMIT');
 
-    // 7. Enviar e-mail de notificação (sem bloquear a resposta ao cliente)
+    // 8. Enviar e-mail de notificação (sem bloquear a resposta ao cliente)
     enviarEmailAnuncioEditado(emailEmpresa, nomeEmpresa).catch(err =>
       console.error('Erro ao enviar e-mail de edição:', err)
     );
