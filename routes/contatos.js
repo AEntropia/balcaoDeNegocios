@@ -200,7 +200,7 @@ router.post('/', async (req, res) => {
 
     // Enviar email para o administrador
     try {
-      const emailAdministrador = process.env.ADMIN_EMAIL || 'mateus287@outlook.com';
+      const emailAdministrador = process.env.ADMIN_EMAIL || 'cianomeliunas@gmail.com';
       
       const htmlEmail = `
         <!DOCTYPE html>
