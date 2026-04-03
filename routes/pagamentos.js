@@ -8,7 +8,7 @@ const autenticar = require('../middleware/auth');
 const PLANOS = {
   mensal: {
     nome: 'Anúncio Mensal',
-    valor: 0.01,         // ← Altere para o valor real
+    valor: 0.50,         // ← Altere para o valor real
     frequency: 1,
     frequency_type: 'months',
   },
