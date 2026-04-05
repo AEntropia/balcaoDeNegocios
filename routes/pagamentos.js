@@ -8,16 +8,14 @@ const autenticar = require('../middleware/auth');
 const PLANOS = {
   mensal: {
     nome: 'Anúncio Mensal',
-    valor: 0.50,         // ← Altere para o valor real
+    valor: 0.50,
     frequency: 1,
     frequency_type: 'months',
-  },
-  anual: {
-    nome: 'Anúncio Anual',
-    valor: 899.90,        // ← Altere para o valor real
-    frequency: 12,
-    frequency_type: 'months',
-  },
+    free_trial: {          // ← novo
+      frequency: 1,
+      frequency_type: 'days',
+    },
+  }
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -118,26 +116,28 @@ console.log('Access Token configurado:', process.env.MP_ACCESS_TOKEN?.slice(0, 2
   try {
   const fetch = require('node-fetch');
 
-  const resposta = await fetch('https://api.mercadopago.com/preapproval', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.MP_ACCESS_TOKEN}`,
-      'Content-Type': 'application/json',
+// ← Isso está no seu backend (pagamentos.js)
+const resposta = await fetch('https://api.mercadopago.com/preapproval', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    reason: `${dadosPlano.nome} - Anúncio #${empresaId}`,
+    auto_recurring: {
+      frequency: dadosPlano.frequency,
+      frequency_type: dadosPlano.frequency_type,
+      transaction_amount: dadosPlano.valor,
+      currency_id: 'BRL',
+      free_trial: dadosPlano.free_trial,  // ← adiciona aqui
     },
-    body: JSON.stringify({
-      reason: `${dadosPlano.nome} - Anúncio #${empresaId}`,
-      auto_recurring: {
-        frequency: dadosPlano.frequency,
-        frequency_type: dadosPlano.frequency_type,
-        transaction_amount: dadosPlano.valor,
-        currency_id: 'BRL',
-      },
-      payer_email: emailPagador,
-      card_token_id: cardTokenId,
-      back_url: process.env.MP_BACK_URL || 'https://seusite.com.br/pagamento/retorno',
-      status: 'authorized',
-    }),
-  });
+    payer_email: emailPagador,
+    card_token_id: cardTokenId,
+    back_url: process.env.MP_BACK_URL || 'https://seusite.com.br/pagamento/retorno',
+    status: 'authorized',
+  }),
+});
 
   const assinatura = await resposta.json();
   console.log('Resposta MP:', JSON.stringify(assinatura, null, 2));
