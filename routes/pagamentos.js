@@ -10,7 +10,7 @@ const PLANOS = {
     nome: 'Anúncio Mensal',
     valor: 0.50,
     frequency: 1,
-    frequency_type: 'months',
+    frequency_type: 'days',
     free_trial: {          // ← novo
       frequency: 1,
       frequency_type: 'days',

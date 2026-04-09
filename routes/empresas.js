@@ -983,7 +983,7 @@ router.put('/:id', async (req, res) => {
     ]);
 
     // ── Lógica de e-mail ──────────────────────────────────────────────────────
-    const foiAprovado = status_assinatura === 'ativo' && statusAnterior !== 'ativo';
+    const foiAprovado = status_assinatura === 'ativo' && statusAnterior === 'analise';
 
     if (foiAprovado) {
       enviarEmailAnuncioAprovado(emailEmpresa, nomeEmpresa).catch(err =>
