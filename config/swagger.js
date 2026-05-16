@@ -5,7 +5,7 @@ const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'API de Gestão Empresarial',
+      title: 'SOLID FINANCE',
       version: '1.0.0',
       description: 'API REST completa com autenticação JWT, CRUD de empresas e gestão de contatos',
       contact: {
@@ -15,12 +15,12 @@ const options = {
     },
     servers: [
       {
-        url: 'https://balcao-de-negocios.vercel.app',
-        description: 'Servidor de Desenvolvimento'
+        url: 'http://2.24.217.186:3000',
+        description: 'Servidor de Produção'
       },
       {
         url: 'http://localhost:3000',
-        description: 'Servidor de Produção'
+        description: 'Servidor de Testes'
       }
     ],
     components: {

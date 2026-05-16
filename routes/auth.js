@@ -47,7 +47,7 @@ const nodemailer = require('nodemailer');
  *       409:
  *         description: Email já cadastrado
  */
-router.post('/registro', async (req, res) => {
+router.post('/registro', autenticar, async (req, res) => {
   try {
     const { nome, email, senha, confirmarSenha } = req.body;
 
@@ -881,7 +881,7 @@ router.delete('/usuarios/:id', autenticar, async (req, res) => {
     const { id } = req.params;
 
     // Verificar se está tentando deletar o administrador do sistema
-    if (parseInt(id) === -1) {
+    if (parseInt(id) === 1) {
       return res.status(403).json({
         sucesso: false,
         mensagem: 'O administrador do sistema não pode ser deletado'

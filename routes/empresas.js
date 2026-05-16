@@ -490,6 +490,188 @@ router.post('/', async (req, res) => {
 
 /**
  * @swagger
+ * /api/empresas/consultor:
+ *   post:
+ *     summary: Criar novo anúncio (uso exclusivo de consultores autenticados)
+ *     description: |
+ *       Cria um novo anúncio sem passar pelo gateway de pagamento.
+ *       O status padrão é `analise` até aprovação manual.
+ *       Requer autenticação via Bearer token.
+ *     tags: [Empresas]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - cnae
+ *               - setor
+ *               - estado
+ *               - cidade
+ *               - email
+ *             properties:
+ *               cnae:
+ *                 type: string
+ *                 example: "7420002 - ATIVIDADES DE PRODUÇÃO DE FOTOGRAFIAS AÉREAS E SUBMARINAS"
+ *               setor:
+ *                 type: string
+ *                 example: "ATIVIDADES PROFISSIONAIS, CIENTÍFICAS E TÉCNICAS"
+ *               estado:
+ *                 type: string
+ *                 example: "MG"
+ *               cidade:
+ *                 type: string
+ *                 example: "Além Paraíba"
+ *               faturamentoAnual:
+ *                 type: string
+ *               margemLucro:
+ *                 type: string
+ *               precoVenda:
+ *                 type: string
+ *               anoFundacao:
+ *                 type: string
+ *               numeroFuncionarios:
+ *                 type: string
+ *               tipoImovel:
+ *                 type: string
+ *               destaques:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               imagens:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Imagens em Base64 (máx. 5, 5MB cada)
+ *               telefone:
+ *                 type: string
+ *                 nullable: true
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               data_inicio_assinatura:
+ *                 type: string
+ *                 format: date
+ *               data_fim_assinatura:
+ *                 type: string
+ *                 format: date
+ *     responses:
+ *       201:
+ *         description: Anúncio criado com sucesso
+ *       400:
+ *         description: Erro de validação
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.post('/consultor', autenticar, async (req, res) => {
+  try {
+    const {
+      cnae,
+      setor,
+      estado,
+      cidade,
+      faturamentoAnual,
+      margemLucro,
+      precoVenda,
+      anoFundacao,
+      numeroFuncionarios,
+      tipoImovel,
+      destaques,
+      imagens,
+      telefone,
+      email,
+      data_inicio_assinatura,
+      data_fim_assinatura,
+    } = req.body;
+
+    if (!cnae || !setor || !estado || !cidade || !email) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'CNAE, setor, estado, cidade e email são obrigatórios',
+      });
+    }
+
+    // Validar imagens Base64
+    let imagensValidadas = [];
+    if (imagens && Array.isArray(imagens)) {
+      if (imagens.length > MAX_IMAGENS) {
+        return res.status(400).json({
+          sucesso: false,
+          mensagem: `Máximo de ${MAX_IMAGENS} imagens permitidas. Você enviou ${imagens.length}.`,
+        });
+      }
+
+      for (let i = 0; i < imagens.length; i++) {
+        const validacao = validarImagemBase64(imagens[i]);
+        if (!validacao.valido) {
+          return res.status(400).json({
+            sucesso: false,
+            mensagem: `Erro na imagem ${i + 1}: ${validacao.erro}`,
+          });
+        }
+        imagensValidadas.push(imagens[i]);
+      }
+    }
+
+    const destaquesJson = Array.isArray(destaques) ? JSON.stringify(destaques) : null;
+    const imagensJson = JSON.stringify(imagensValidadas);
+
+    const query = `
+      INSERT INTO empresas (
+        cnae, setor, estado, cidade, faturamento_anual, margem_lucro,
+        preco_venda, ano_fundacao, numero_funcionarios, tipo_imovel,
+        destaques, imagens, telefone, email, ativo,
+        data_inicio_assinatura, data_fim_assinatura, status_assinatura
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      RETURNING id
+    `;
+
+    const resultado = await pool.query(query, [
+      cnae,
+      setor,
+      estado,
+      cidade,
+      faturamentoAnual || null,
+      margemLucro || null,
+      precoVenda || null,
+      anoFundacao || null,
+      numeroFuncionarios || null,
+      tipoImovel || null,
+      destaquesJson,
+      imagensJson,
+      telefone || null,
+      email,
+      true,
+      data_inicio_assinatura || null,
+      data_fim_assinatura || null,
+      'analise', // consultores criam direto em analise, sem pagamento
+    ]);
+
+    res.status(201).json({
+      sucesso: true,
+      mensagem: 'Anúncio criado com sucesso',
+      id: resultado.rows[0].id,
+      totalImagens: imagensValidadas.length,
+    });
+
+  } catch (erro) {
+    console.error('Erro ao criar anúncio pelo consultor:', erro);
+    res.status(500).json({
+      sucesso: false,
+      mensagem: 'Erro ao criar anúncio',
+      erro: erro.message,
+    });
+  }
+});
+
+/**
+ * @swagger
  * /api/empresas:
  *   get:
  *     summary: Listar todas as empresas com paginação e filtros
