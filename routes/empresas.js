@@ -823,7 +823,8 @@ router.get('/', async (req, res) => {
              preco_venda, ano_fundacao, numero_funcionarios, tipo_imovel,
              destaques, imagens, ultimos_4_digitos_cartao, nome_cartao,
              validade_cartao, telefone, email, ativo,
-             data_inicio_assinatura, data_fim_assinatura, status_assinatura
+             data_inicio_assinatura, data_fim_assinatura, status_assinatura,
+             parecer_tecnico
       FROM empresas
       ${clausulaWhere}
       ORDER BY id DESC
@@ -863,7 +864,8 @@ router.get('/', async (req, res) => {
       return {
         ...empresa,
         destaques,
-        imagens
+        imagens,
+        parecer_tecnico: empresa.parecer_tecnico || null
       };
     });
 
