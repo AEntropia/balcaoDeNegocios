@@ -1050,6 +1050,10 @@ router.get('/:id', async (req, res) => {
  *               status_assinatura:
  *                 type: string
  *                 enum: [ativa, expirando, expirada, cancelada]
+ *               parecer_tecnico:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Parecer técnico do anúncio (preenchido durante análise, opcional)
  *     responses:
  *       200:
  *         description: Empresa atualizada com sucesso
@@ -1081,7 +1085,8 @@ router.put('/:id', async (req, res) => {
       ativo,
       data_inicio_assinatura,
       data_fim_assinatura,
-      status_assinatura
+      status_assinatura,
+      parecer_tecnico  // ← novo campo
     } = req.body;
 
     // Buscar empresa atual para comparar status e obter e-mail e setor
@@ -1138,8 +1143,9 @@ router.put('/:id', async (req, res) => {
           imagens = COALESCE($12, imagens), 
           telefone = $13, email = $14,
           ativo = $15, data_inicio_assinatura = $16, data_fim_assinatura = $17,
-          status_assinatura = $18
-      WHERE id = $19
+          status_assinatura = $18,
+          parecer_tecnico = COALESCE($19, parecer_tecnico)
+      WHERE id = $20
     `;
 
     await pool.query(query, [
@@ -1161,6 +1167,7 @@ router.put('/:id', async (req, res) => {
       data_inicio_assinatura || null,
       data_fim_assinatura || null,
       status_assinatura || null,
+      parecer_tecnico || null,  // ← novo campo
       id
     ]);
 
